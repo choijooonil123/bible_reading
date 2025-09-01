@@ -32,7 +32,7 @@
         <div class="login-head">
           <div class="logo-hero">📖</div>
           <h1>말씀읽기APP</h1>
-          <p class="muted">이메일 · 비밀번호 · 표시이름 로그인</p>
+          <p class="muted">이메일 · 비밀번호 · (선택) 표시이름 · (선택) 닉네임</p>
         </div>
 
         <div class="login-body">
@@ -42,17 +42,20 @@
           <label class="form-label mt12" for="password">비밀번호</label>
           <input id="password" class="input" type="password" placeholder="비밀번호" autocomplete="current-password"/>
 
-          <label class="form-label mt12" for="displayName">표시이름</label>
+          <label class="form-label mt12" for="displayName">표시이름 (선택, 내 화면용)</label>
           <input id="displayName" class="input" type="text" placeholder="예: 홍길동" autocomplete="name"/>
 
-          <div class="row mt16">
+          <label class="form-label mt12" for="nickname">닉네임 (선택, 순위 공개용)</label>
+          <input id="nickname" class="input" type="text" placeholder="예: 다윗"/>
+
+          <div class="row mt16" style="gap:8px; width:100%">
             <button id="btnLogin" class="btn primary fill">로그인</button>
             <button id="btnSignup" class="btn fill">회원가입</button>
           </div>
         </div>
 
         <div class="login-foot muted">
-          <small>로그인 후 읽기 진도와 순위가 저장됩니다.</small>
+          <small>표시이름은 내 화면에만, 닉네임은 순위표에 공개됩니다.</small>
         </div>
       </div>
     </div>
@@ -69,10 +72,72 @@
       </div>
     </header>
 
-    <!-- 이하 동일: 성경 선택, 절 읽기, 순위, 현황표 모달 등 -->
     <main class="container">
-      <!-- ... -->
+      <!-- 선택 섹션 -->
+      <section class="card">
+        <details open>
+          <summary>성경(66권) 선택</summary>
+          <div class="field-row">
+            <label for="bookSelect" class="form-label">성경</label>
+            <select id="bookSelect" class="select"></select>
+          </div>
+        </details>
+
+        <details class="mt12">
+          <summary>장 선택</summary>
+          <div id="chapterGrid" class="grid"></div>
+        </details>
+
+        <details class="mt12">
+          <summary>절 선택</summary>
+          <div id="verseGrid" class="grid small"></div>
+        </details>
+      </section>
+
+      <!-- 리더 섹션 -->
+      <section class="card">
+        <div class="reader-head">
+          <div>
+            <div id="locLabel" class="loc"></div>
+            <div id="verseCount" class="muted"></div>
+          </div>
+        </div>
+        <div id="verseContainer" class="verse-container">
+          <div id="verseText" class="verse-text">성경/장/절을 선택하세요.</div>
+          <div id="listenHint" class="muted sm">음성 인식으로 읽으면 글자가 채워집니다.</div>
+        </div>
+        <div class="row between stats">
+          <strong id="myStats">—</strong>
+          <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
+        </div>
+      </section>
+
+      <!-- 순위 -->
+      <section class="card">
+        <h3>📈 읽기 순위</h3>
+        <ol id="leaderList" class="leaders"></ol>
+        <p class="muted sm">※ 닉네임이 없는 사용자는 이메일 앞부분으로 표시됩니다.</p>
+      </section>
     </main>
+
+    <!-- 조작 FAB -->
+    <div class="fab-col">
+      <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
+      <button id="btnToggleMic" class="fab primary" aria-label="음성 인식">🎙️</button>
+      <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
+    </div>
+
+    <!-- 현황표 모달 -->
+    <div id="matrixModal" class="modal hidden">
+      <div class="modal-body full">
+        <div class="row between">
+          <h3>읽기 현황표</h3>
+          <button id="btnCloseMatrix" class="btn small" type="button">닫기</button>
+        </div>
+        <div id="matrixWrap" class="matrix-wrap"></div>
+        <div class="muted smallprint">* 초록=완독 장, 회색=미완료 (가로 스크롤 가능)</div>
+      </div>
+    </div>
   </section>
 
 </body>
