@@ -423,22 +423,35 @@
     table.appendChild(tbody);
     els.matrixWrap.innerHTML=""; els.matrixWrap.appendChild(table);
   }
-  els.btnProgressMatrix.addEventListener('click', ()=>{ buildMatrix(); els.matrixModal.classList.remove('hidden'); });
-  els.btnCloseMatrix.addEventListener('click', ()=>{ els.matrixModal.classList.add('hidden'); });
 
-  // ----- 오버레이 클릭/ESC로 모달 닫기 (눌림 문제 방지) -----
-  (function enhanceModalClose(){
-    const modal = els.matrixModal;
-    const body  = modal?.querySelector('.modal-body');
-    modal?.addEventListener('click', (e) => {
-      if (!body) return;
-      if (!body.contains(e.target)) modal.classList.add('hidden');
-    });
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
-        modal.classList.add('hidden');
-      }
-    });
-  })();
+  // ==== Modal open/close (robust) ====
+  function openMatrix() {
+    buildMatrix();
+    els.matrixModal?.classList.remove('hidden');
+  }
+  function closeMatrix() {
+    els.matrixModal?.classList.add('hidden');
+  }
+  els.btnProgressMatrix?.addEventListener('click', openMatrix);
+  els.btnCloseMatrix?.addEventListener('click', (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    closeMatrix();
+  });
+  els.matrixModal?.addEventListener('click', (e) => {
+    const body = els.matrixModal.querySelector('.modal-body');
+    if (!body || !e.target) return;
+    if (!body.contains(e.target)) closeMatrix();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !els.matrixModal.classList.contains('hidden')) closeMatrix();
+  });
+  // 위임 리스너(최후 보강)
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t && (t.id === 'btnCloseMatrix' || t.closest?.('#btnCloseMatrix'))) {
+      e.preventDefault(); e.stopPropagation(); closeMatrix();
+    }
+  });
 
 })();
