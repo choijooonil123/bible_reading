@@ -13,15 +13,40 @@
   <script src="books.js" defer></script>
   <script src="firebaseConfig.js" defer></script>
   <script src="app.js" defer></script>
+  <style>
+    .phone-auth { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .phone-auth input[type="tel"], .phone-auth input[type="text"] {
+      background:#0e1530; color:#eaf0ff; border:1px solid #2a386a; border-radius:6px; padding:6px 10px;
+    }
+    .phone-hint { font-size:.85em; opacity:.8 }
+    #codeArea.hidden { display:none; }
+  </style>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="logo">📖</span><strong>말씀읽기APP</strong><em class="muted">개역개정 · bible.json</em></div>
     <div id="authArea" class="auth-area">
+      <!-- 로그인 전 UI: 표시이름 + 전화번호 -->
       <div id="signedOut" class="auth-block">
-        <button id="btnGoogle" class="btn">Google로 로그인</button>
-        <button id="btnAnon" class="btn ghost">빠른 시작(익명)</button>
+        <div class="phone-auth">
+          <label for="displayName">표시이름</label>
+          <input id="displayName" type="text" placeholder="예: 김하늘" autocomplete="name" />
+          <span class="phone-hint muted">리더보드/진도표에 보여집니다.</span>
+        </div>
+        <div class="phone-auth">
+          <label for="phoneNumber">전화번호</label>
+          <input id="phoneNumber" type="tel" placeholder="+82 10-1234-5678" inputmode="tel" autocomplete="tel"/>
+          <button id="btnSendCode" class="btn">인증코드 받기</button>
+          <span class="phone-hint muted">국가번호 포함(E.164), 예: +82 10-1234-5678</span>
+          <div id="recaptchaContainer"></div>
+        </div>
+        <div id="codeArea" class="phone-auth hidden">
+          <label for="smsCode">인증코드</label>
+          <input id="smsCode" type="text" placeholder="6자리 코드" inputmode="numeric" maxlength="8"/>
+          <button id="btnVerifyCode" class="btn">로그인</button>
+        </div>
       </div>
+
       <div id="signedIn" class="auth-block hidden">
         <img id="userPhoto" class="avatar"/>
         <span id="userName"></span>
@@ -62,7 +87,7 @@
     </section>
   </main>
 
-  <!-- 모달 -->
+  <!-- 모달: 읽기 현황표 -->
   <div id="matrixModal" class="modal hidden">
     <div class="modal-body">
       <div class="row between"><h3>읽기 현황표 (행: 66권, 열: 장)</h3><button id="btnCloseMatrix" class="btn small" type="button">닫기</button></div>
