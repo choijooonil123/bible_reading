@@ -1,9 +1,12 @@
-/* 말씀읽기APP — 모바일 퍼스트 + PWA + 익명 로그인 + bible.json */
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식 + 진도저장
+   - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
+   - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
+*/
 (() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js")
+      navigator.serviceWorker.register("./sw.js", { scope: "./" })
         .then(reg => console.log("[SW] registered:", reg.scope))
         .catch(err => console.warn("[SW] register failed:", err));
     });
@@ -23,7 +26,7 @@
   }
   initFirebase();
 
-  // ---------- Screen Routing ----------
+  // ---------- Screens ----------
   const scrLogin = document.getElementById("screen-login");
   const scrApp   = document.getElementById("screen-app");
   function showScreen(name) {
@@ -33,10 +36,13 @@
 
   // ---------- DOM ----------
   const els = {
-    // 로그인
-    displayName: document.getElementById("displayName"),
-    phoneLocal:  document.getElementById("phoneLocal"),
-    btnLogin:    document.getElementById("btnLogin"),
+    // 로그인 폼
+    email: document.getElementById("email"),
+    password: document.getElementById("password"),
+    displayName: document.getElementById("displayName"), // 선택(Auth만)
+    nickname: document.getElementById("nickname"),       // 선택(Firestore)
+    btnLogin: document.getElementById("btnLogin"),
+    btnSignup: document.getElementById("btnSignup"),
 
     // 상단(앱)
     signedIn: document.getElementById("signedIn"),
@@ -57,10 +63,10 @@
     leaderList: document.getElementById("leaderList"),
 
     // 현황표
-    btnProgressMatrix: document.getElementById("btnProgressMatrix"),
-    btnCloseMatrix: document.getElementById("btnCloseMatrix"),
     matrixModal: document.getElementById("matrixModal"),
     matrixWrap: document.getElementById("matrixWrap"),
+    btnCloseMatrix: document.getElementById("btnCloseMatrix"),
+    btnOpenMatrix: document.getElementById("btnOpenMatrix"),
 
     // FABs
     btnPrevVerse: document.getElementById("btnPrevVerse"),
@@ -82,7 +88,7 @@
   // ---------- bible.json ----------
   async function loadBible() {
     try {
-      const res = await fetch("bible.json", { cache: "no-cache" });
+      const res = await fetch("./bible.json", { cache: "no-cache" });
       if (!res.ok) throw new Error("bible.json not found");
       state.bible = await res.json();
     } catch (e) {
@@ -92,54 +98,74 @@
   }
   loadBible();
 
-  // ---------- 전화번호 유효성(국가번호 없이 국내 형식만) ----------
-  function normalizeKRLocalPhone(raw) {
-    if (!raw) return "";
-    const d = String(raw).replace(/\D/g, "");
-    // 02, 0xx 로 시작하는 9~11자리 허용
-    if (!/^0\d{8,10}$/.test(d)) return ""; // 잘못된 형식
-    // 보기 좋게 포매팅(간단)
-    if (d.startsWith("02")) {
-      return d.length === 9 ? d.replace(/(\d{2})(\d{3})(\d{4})/, "$1-$2-$3")
-                            : d.replace(/(\d{2})(\d{4})(\d{4})/, "$1-$2-$3");
-    }
-    return d.length === 10 ? d.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")
-                           : d.replace(/(\d{3})(\d{4})(\d{4})/, "$1-$2-$3");
+  // ---------- Auth UX 보조 ----------
+  function mapAuthError(e) {
+    const code = e?.code || "";
+    if (code.includes("invalid-email")) return "이메일 형식이 올바르지 않습니다.";
+    if (code.includes("email-already-in-use")) return "이미 가입된 이메일입니다. 로그인하세요.";
+    if (code.includes("weak-password")) return "비밀번호를 6자 이상으로 입력하세요.";
+    if (code.includes("operation-not-allowed")) return "이메일/비밀번호 로그인이 비활성화되어 있습니다. 콘솔에서 활성화해주세요.";
+    if (code.includes("network-request-failed")) return "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하세요.";
+    return e?.message || "알 수 없는 오류가 발생했습니다.";
+  }
+  async function safeEnsureUserDoc(u, opts={}) {
+    try { await ensureUserDoc(u, opts); } catch (e){ console.warn("[ensureUserDoc] 실패:", e); }
+  }
+  let busy=false;
+  async function withBusy(btn, fn){
+    if(busy) return;
+    busy=true;
+    const orig = btn?.textContent;
+    if(btn){ btn.disabled=true; btn.textContent="처리 중…"; }
+    try{ await fn(); } finally { busy=false; if(btn){ btn.disabled=false; btn.textContent=orig; } }
   }
 
-  // ---------- 로그인(익명) ----------
-  els.btnLogin?.addEventListener("click", async () => {
-    const name = (els.displayName?.value || "").trim();
-    const phoneLocalRaw = (els.phoneLocal?.value || "").trim();
-    if (!name) { alert("표시이름을 입력하세요."); return; }
-
-    const phoneLocal = normalizeKRLocalPhone(phoneLocalRaw);
-    if (phoneLocalRaw && !phoneLocal) {
-      alert("전화번호를 010-1234-5678 형식으로 입력하세요. (국가번호 없이)");
-      els.phoneLocal?.focus();
-      return;
-    }
+  // ---------- 회원가입 / 로그인 / 로그아웃 ----------
+  els.btnSignup?.addEventListener("click", () => withBusy(els.btnSignup, async () => {
+    const email = (els.email.value || "").trim();
+    const pw    = (els.password.value || "").trim();
+    const name  = (els.displayName.value || "").trim(); // 선택 입력
+    const nick  = (els.nickname?.value || "").trim();   // 선택 입력
+    if (!email || !pw) { alert("이메일/비밀번호를 입력하세요."); return; }
 
     try {
-      const cred = await auth.signInAnonymously();
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
       user = cred.user;
-      try { await user.updateProfile({ displayName: name }); } catch (_) {}
-      await ensureUserDoc(user, { displayName: name, phoneLocal });
+      if (name) { await user.updateProfile({ displayName: name }); } // Auth 프로필만 갱신
+      await safeEnsureUserDoc(user, { nickname: nick });             // 닉네임은 Firestore에
     } catch (e) {
-      alert("로그인 실패: " + e.message);
+      console.error(e);
+      alert("회원가입 실패: " + mapAuthError(e));
     }
-  });
+  }));
+
+  els.btnLogin?.addEventListener("click", () => withBusy(els.btnLogin, async () => {
+    const email = (els.email.value || "").trim();
+    const pw    = (els.password.value || "").trim();
+    const name  = (els.displayName.value || "").trim(); // 선택 입력
+    const nick  = (els.nickname?.value || "").trim();   // 선택 입력
+    if (!email || !pw) { alert("이메일/비밀번호를 입력하세요."); return; }
+
+    try {
+      const cred = await auth.signInWithEmailAndPassword(email, pw);
+      user = cred.user;
+      if (name) { await user.updateProfile({ displayName: name }); } // Auth 프로필만 갱신
+      await safeEnsureUserDoc(user, { nickname: nick });             // 닉네임은 Firestore에
+    } catch (e) {
+      console.error(e);
+      alert("로그인 실패: " + mapAuthError(e));
+    }
+  }));
 
   els.btnSignOut?.addEventListener("click", () => auth?.signOut());
 
-  // ---------- Auth State ----------
   auth?.onAuthStateChanged(async (u) => {
     user = u;
     if (!u) { showScreen("login"); clearAppUI(); return; }
 
     showScreen("app");
     els.signedIn?.classList.remove("hidden");
-    els.userName && (els.userName.textContent = u.displayName || "익명");
+    els.userName && (els.userName.textContent = u.displayName || u.email || "사용자");
     els.userPhoto && (els.userPhoto.src = u.photoURL || "https://avatars.githubusercontent.com/u/9919?s=200&v=4");
 
     try { await ensureUserDoc(u); } catch (e) {}
@@ -149,20 +175,21 @@
   });
 
   // ---------- Firestore helpers ----------
-  async function ensureUserDoc(u, override) {
-    if (!db) return;
-    const ref = db.collection("users").doc(u.uid);
-    const base = {
+  async function ensureUserDoc(u, opts={}) {
+    if (!db || !u) return;
+    const data = {
+      email: u.email || "",
       versesRead: firebase.firestore.FieldValue.increment(0),
       chaptersRead: firebase.firestore.FieldValue.increment(0),
       last: state.myStats.last || null,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
-    const payload = override
-      ? { ...base, displayName: override.displayName, phoneLocal: override.phoneLocal || "" }
-      : { ...base, displayName: u.displayName || "익명" };
-    await ref.set(payload, { merge: true });
+    // 닉네임 입력 시에만 병합 저장
+    if (opts.nickname && opts.nickname.trim()) {
+      data.nickname = opts.nickname.trim();
+    }
+    await db.collection("users").doc(u.uid).set(data, { merge: true });
   }
 
   async function loadMyStats() {
@@ -355,12 +382,21 @@
   els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
   els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
 
-  // ---------- Leaderboard ----------
+  // ---------- Leaderboard (닉네임 > 이메일앞부분) ----------
   async function loadLeaderboard() {
     if (!db || !els.leaderList) return;
     let qs; try { qs = await db.collection("users").orderBy("versesRead","desc").limit(20).get(); } catch (e) { return; }
     const list=[]; qs.forEach(doc=>list.push({id:doc.id, ...doc.data()}));
-    els.leaderList.innerHTML=""; list.forEach((u,idx)=>{ const li=document.createElement("li"); const name=u.displayName||"익명"; li.innerHTML=`<strong>${idx+1}위</strong> ${name} · 절 ${Number(u.versesRead||0).toLocaleString()} · 장 ${Number(u.chaptersRead||0).toLocaleString()}`; els.leaderList.appendChild(li); });
+    els.leaderList.innerHTML="";
+    list.forEach((u,idx)=>{
+      const label = (u.nickname && String(u.nickname).trim())
+        ? String(u.nickname).trim()
+        : ((u.email || "").toString().split("@")[0] || `user-${String(u.id).slice(0,6)}`);
+      const v = Number(u.versesRead||0), c = Number(u.chaptersRead||0);
+      const li=document.createElement("li");
+      li.innerHTML = `<strong>${idx+1}위</strong> ${label} · 절 ${v.toLocaleString()} · 장 ${c.toLocaleString()}`;
+      els.leaderList.appendChild(li);
+    });
   }
 
   // ---------- Progress Matrix ----------
@@ -390,7 +426,7 @@
   }
   function openMatrix(){ buildMatrix(); els.matrixModal?.classList.add("show"); els.matrixModal?.classList.remove("hidden"); }
   function closeMatrix(){ els.matrixModal?.classList.remove("show"); els.matrixModal?.classList.add("hidden"); }
-  els.btnProgressMatrix?.addEventListener("click", openMatrix);
+  document.getElementById("btnOpenMatrix")?.addEventListener("click", openMatrix);
   els.btnCloseMatrix?.addEventListener("click", (e)=>{ e?.preventDefault?.(); e?.stopPropagation?.(); closeMatrix(); });
   els.matrixModal?.addEventListener("click", (e)=>{ const body=els.matrixModal.querySelector(".modal-body"); if (!body || !e.target) return; if (!body.contains(e.target)) closeMatrix(); });
   window.addEventListener("keydown", (e)=>{ if (e.key==='Escape' && els.matrixModal?.classList.contains('show')) closeMatrix(); });
