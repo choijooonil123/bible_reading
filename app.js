@@ -1,10 +1,6 @@
-/* 말씀읽기APP — 모바일 퍼스트 + PWA + 전화번호 인증 + bible.json
+/* 말씀읽기APP — 모바일 퍼스트 + PWA + 전화번호 인증(+82 자동) + bible.json
    bible.json 스키마 예:
-   {
-     "창세기": { "1": { "1": "태초에...", "2": "..." }, "2": {...} },
-     ...
-     "요한계시록": { "22": {...} }
-   }
+   { "창세기": { "1": { "1": "태초에...", "2": "..." } }, ..., "요한계시록": {...} }
 */
 (() => {
   // ========================= PWA: Service Worker =========================
@@ -83,7 +79,6 @@
     btnPrevVerse: document.getElementById("btnPrevVerse"),
     btnNextVerse: document.getElementById("btnNextVerse"),
     btnToggleMic: document.getElementById("btnToggleMic"),
-    // (선택) 힌트 영역이 없는 경우도 있음
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
   };
@@ -119,6 +114,34 @@
   }
   loadBible();
 
+  // ========================= KR 전화번호 → E.164(+82) 변환 =========================
+  // 사용자는 국가번호 없이 입력(예: 010-1234-5678). 항상 한국(+82)로 전송.
+  function toKRE164(raw) {
+    if (!raw) return null;
+    const digits = String(raw).replace(/\D/g, ""); // 숫자만
+    if (!digits) return null;
+
+    // 이미 82로 시작하는 경우(+없이) 처리
+    if (digits.startsWith("82")) {
+      return "+" + digits; // e.g., 821012345678
+    }
+
+    // 0으로 시작(국내 표준) → 선두 0 제거 후 +82 접두
+    if (digits.startsWith("0")) {
+      const local = digits.slice(1); // "10..." 또는 "2..." 등
+      if (!local.length) return null;
+      return "+82" + local;
+    }
+
+    // 그 외(실수로 10~11자리만 적은 경우)도 한국 번호로 간주
+    if (digits.length >= 8 && digits.length <= 11) {
+      return "+82" + digits;
+    }
+
+    // 그 밖의 경우는 실패 처리
+    return null;
+  }
+
   // ========================= reCAPTCHA =========================
   function ensureRecaptcha() {
     if (recaptchaVerifier) return recaptchaVerifier;
@@ -126,19 +149,19 @@
     return recaptchaVerifier;
   }
 
-  // ========================= Phone Auth =========================
+  // ========================= Phone Auth (+82 자동) =========================
   els.btnSendCode?.addEventListener("click", async () => {
     const name = (els.displayName?.value || "").trim();
-    const phone = (els.phoneNumber?.value || "").trim();
+    const phoneRaw = (els.phoneNumber?.value || "").trim();
     if (!name) { alert("표시이름을 입력하세요."); els.displayName?.focus(); return; }
-    if (!phone.startsWith("+")) {
-      alert("국가번호 포함(E.164) 형식으로 입력하세요. 예: +82 10-1234-5678");
-      els.phoneNumber?.focus(); return;
-    }
+
+    const e164 = toKRE164(phoneRaw);
+    if (!e164) { alert("올바른 휴대폰 번호를 입력하세요. 예: 010-1234-5678"); els.phoneNumber?.focus(); return; }
+
     state.pendingDisplayName = name;
     try {
       const appVerifier = ensureRecaptcha();
-      confirmationResult = await auth.signInWithPhoneNumber(phone, appVerifier);
+      confirmationResult = await auth.signInWithPhoneNumber(e164, appVerifier);
       els.codeArea?.classList.remove("hidden");
       alert("인증코드를 문자로 보냈습니다.");
     } catch (e) {
