@@ -2,100 +2,97 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>말씀읽기APP — bible.json</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>말씀읽기APP</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#10183a">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
   <link rel="stylesheet" href="styles.css"/>
+
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+
   <!-- 앱 코드 -->
   <script src="books.js" defer></script>
   <script src="firebaseConfig.js" defer></script>
   <script src="app.js" defer></script>
-  <style>
-    .phone-auth { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .phone-auth input[type="tel"], .phone-auth input[type="text"] {
-      background:#0e1530; color:#eaf0ff; border:1px solid #2a386a; border-radius:6px; padding:6px 10px;
-    }
-    .phone-hint { font-size:.85em; opacity:.8 }
-    #codeArea.hidden { display:none; }
-  </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="logo">📖</span><strong>말씀읽기APP</strong><em class="muted">개역개정 · bible.json</em></div>
-    <div id="authArea" class="auth-area">
-      <!-- 로그인 전 UI: 표시이름 + 전화번호 -->
-      <div id="signedOut" class="auth-block">
-        <div class="phone-auth">
+
+  <!-- 로그인 화면 -->
+  <section id="screen-login" class="screen show">
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-head">
+          <div class="logo-hero">📖</div>
+          <h1>말씀읽기APP</h1>
+          <p class="muted">개역개정 · bible.json 기반</p>
+        </div>
+        <div class="login-body">
           <label for="displayName">표시이름</label>
-          <input id="displayName" type="text" placeholder="예: 김하늘" autocomplete="name" />
-          <span class="phone-hint muted">리더보드/진도표에 보여집니다.</span>
-        </div>
-        <div class="phone-auth">
-          <label for="phoneNumber">전화번호</label>
-          <input id="phoneNumber" type="tel" placeholder="+82 10-1234-5678" inputmode="tel" autocomplete="tel"/>
-          <button id="btnSendCode" class="btn">인증코드 받기</button>
-          <span class="phone-hint muted">국가번호 포함(E.164), 예: +82 10-1234-5678</span>
+          <input id="displayName" type="text" class="input" placeholder="예: 홍길동"/>
+          <label for="phoneNumber" class="mt12">전화번호</label>
+          <input id="phoneNumber" type="tel" class="input" placeholder="+82 10-1234-5678" inputmode="tel"/>
+          <button id="btnSendCode" class="btn primary fill mt16">인증코드 받기</button>
           <div id="recaptchaContainer"></div>
+          <div id="codeArea" class="hidden mt12">
+            <input id="smsCode" type="text" class="input" placeholder="6자리" inputmode="numeric"/>
+            <button id="btnVerifyCode" class="btn success fill mt8">로그인</button>
+          </div>
         </div>
-        <div id="codeArea" class="phone-auth hidden">
-          <label for="smsCode">인증코드</label>
-          <input id="smsCode" type="text" placeholder="6자리 코드" inputmode="numeric" maxlength="8"/>
-          <button id="btnVerifyCode" class="btn">로그인</button>
-        </div>
-      </div>
-
-      <div id="signedIn" class="auth-block hidden">
-        <img id="userPhoto" class="avatar"/>
-        <span id="userName"></span>
-        <button id="btnSignOut" class="btn danger">로그아웃</button>
       </div>
     </div>
-  </header>
+  </section>
 
-  <main class="layout">
-    <aside class="panel selectors">
-      <div class="row"><label for="bookSelect">성경(66권):</label><select id="bookSelect"></select></div>
-      <div class="row between">
-        <button id="btnProgressMatrix" class="btn small">읽기 현황표</button>
-        <span id="resumeInfo" class="muted"></span>
+  <!-- 본화면 -->
+  <section id="screen-app" class="screen">
+    <header class="appbar">
+      <div class="brand"><span class="logo">📖</span><strong>말씀읽기</strong></div>
+      <div id="signedIn" class="userbox hidden">
+        <img id="userPhoto" class="avatar"/><span id="userName"></span>
+        <button id="btnSignOut" class="btn small danger">로그아웃</button>
       </div>
-      <section><h3>장 선택</h3><div id="chapterGrid" class="grid"></div></section>
-      <section><h3>절 선택</h3><div id="verseGrid" class="grid small"></div></section>
-    </aside>
+    </header>
 
-    <section class="panel reader">
-      <div class="reader-head">
-        <div><div id="locLabel" class="loc"></div><div id="verseCount" class="muted"></div></div>
-        <div class="row">
-          <button id="btnPrevVerse" class="btn small">이전 절</button>
-          <button id="btnToggleMic" class="btn">🎙️ 음성인식 시작</button>
-          <button id="btnNextVerse" class="btn small">다음 절</button>
-        </div>
-      </div>
-      <div id="verseContainer" class="verse-container">
-        <div id="verseText" class="verse-text">왼쪽에서 성경, 장, 절을 선택하세요.</div>
-        <div id="listenHint" class="muted">음성인식이 지원되는 브라우저에서 읽으면 글자가 색으로 채워집니다.</div>
-      </div>
-      <div class="row between stats">
+    <main class="container">
+      <section class="card">
+        <label for="bookSelect">성경(66권)</label>
+        <select id="bookSelect" class="select"></select>
+        <div id="chapterGrid" class="grid"></div>
+        <div id="verseGrid" class="grid small"></div>
+      </section>
+      <section class="card">
+        <div id="locLabel" class="loc"></div>
+        <div id="verseText" class="verse-text">절을 선택하세요.</div>
+        <div id="verseCount" class="muted"></div>
         <strong id="myStats">—</strong>
-        <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
-      </div>
-      <section class="leaderboard"><h3>📈 읽기 순위</h3><ol id="leaderList" class="leaders"></ol></section>
-    </section>
-  </main>
+      </section>
+      <section class="card">
+        <h3>📈 읽기 순위</h3>
+        <ol id="leaderList" class="leaders"></ol>
+      </section>
+    </main>
 
-  <!-- 모달: 읽기 현황표 -->
-  <div id="matrixModal" class="modal hidden">
-    <div class="modal-body">
-      <div class="row between"><h3>읽기 현황표 (행: 66권, 열: 장)</h3><button id="btnCloseMatrix" class="btn small" type="button">닫기</button></div>
-      <div id="matrixWrap" class="matrix-wrap"></div>
-      <div class="muted smallprint">* 초록=완독 장, 회색=미완료. 표는 가로 스크롤 가능.</div>
+    <!-- FAB -->
+    <div class="fab-col">
+      <button id="btnPrevVerse" class="fab">⟨</button>
+      <button id="btnToggleMic" class="fab primary">🎙️</button>
+      <button id="btnNextVerse" class="fab">⟩</button>
     </div>
-  </div>
 
-  <footer class="footer muted"><span>ⓒ 말씀읽기APP</span><span>Firebase + GitHub Pages</span></footer>
+    <!-- 현황표 모달 -->
+    <div id="matrixModal" class="modal hidden">
+      <div class="modal-body full">
+        <div class="row between"><h3>읽기 현황표</h3><button id="btnCloseMatrix" class="btn small">닫기</button></div>
+        <div id="matrixWrap" class="matrix-wrap"></div>
+      </div>
+    </div>
+  </section>
+
 </body>
 </html>
