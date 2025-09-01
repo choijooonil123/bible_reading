@@ -2,11 +2,24 @@
 (() => {
   // ---------- Firebase ----------
   let app, auth, db, user;
+
   const initFirebase = () => {
-    if (!window.firebaseConfig) return;
-    app = firebase.initializeApp(window.firebaseConfig);
-    auth = firebase.auth();
-    db   = firebase.firestore();
+    if (typeof firebase === "undefined") {
+      console.error("[Firebase] SDK 미로드 (gstatic 차단/스크립트 순서 확인)");
+      return;
+    }
+    if (!window.firebaseConfig) {
+      console.error("[Firebase] window.firebaseConfig 없음 (firebaseConfig.js 로딩/파일명 확인)");
+      return;
+    }
+    try {
+      app = firebase.initializeApp(window.firebaseConfig);
+      auth = firebase.auth();
+      db   = firebase.firestore();
+      console.log("[Firebase] 초기화 OK");
+    } catch (e) {
+      console.error("[Firebase] 초기화 실패:", e);
+    }
   };
   initFirebase();
 
@@ -58,7 +71,7 @@
   // ---------- Load bible.json once ----------
   async function loadBible(){
     try{
-      const res = await fetch('bible.json');
+      const res = await fetch('bible.json', {cache:'no-cache'});
       if (!res.ok) throw new Error('bible.json not found');
       state.bible = await res.json();
     } catch (e){
@@ -68,7 +81,7 @@
   }
   loadBible();
 
-  // ---------- Auth ----------
+  // ---------- Auth UI ----------
   const uiSignedIn = (u) => {
     els.signedOut.classList.add('hidden');
     els.signedIn.classList.remove('hidden');
@@ -80,29 +93,70 @@
     els.signedOut.classList.remove('hidden');
   };
 
+  // ----- Redirect 결과 회수(팝업 차단 환경 대비) -----
+  if (auth?.getRedirectResult) {
+    auth.getRedirectResult().then((result) => {
+      if (result && result.user) {
+        console.log('[Auth] redirect success:', result.user.uid);
+      }
+    }).catch(err => {
+      console.warn('[Auth] getRedirectResult error:', err);
+    });
+  }
+
+  // ----- 로그인 버튼 -----
   els.btnGoogle?.addEventListener('click', async () => {
-    try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
-    catch (e) { alert("Google 로그인 오류: "+e.message); }
+    if (!auth) { alert("Firebase 초기화 실패: firebaseConfig.js/SDK 로드 확인"); return; }
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+      await auth.signInWithPopup(provider);
+    } catch (e) {
+      console.warn('[Auth] popup sign-in failed → fallback to redirect:', e?.code || e);
+      const popupErrors = new Set([
+        'auth/popup-blocked',
+        'auth/popup-closed-by-user',
+        'auth/cancelled-popup-request',
+        'auth/operation-not-supported-in-this-environment'
+      ]);
+      if (popupErrors.has(e?.code)) {
+        await auth.signInWithRedirect(provider);
+      } else {
+        alert("Google 로그인 오류: " + e.message);
+      }
+    }
   });
+
   els.btnAnon?.addEventListener('click', async () => {
+    if (!auth) { alert("Firebase 초기화 실패: firebaseConfig.js/SDK 로드 확인"); return; }
     try { await auth.signInAnonymously(); }
     catch (e) { alert("익명 로그인 오류: "+e.message); }
   });
-  els.btnSignOut?.addEventListener('click', async () => { await auth.signOut(); });
 
+  els.btnSignOut?.addEventListener('click', async () => { try { await auth?.signOut(); } catch(e){ console.warn(e); } });
+
+  // ---------- Auth State ----------
   auth?.onAuthStateChanged(async (u) => {
     user = u;
-    if (u) {
-      uiSignedIn(u);
-      await ensureUserDoc(u);
-      await loadMyStats();
-      buildBookSelect();
-      loadLeaderboard();
-      if (state.myStats?.last?.bookKo && state.myStats?.last?.chapter) {
-        const {bookKo, chapter} = state.myStats.last;
-        els.resumeInfo.textContent = `마지막 위치: ${bookKo} ${chapter}장`;
-      } else els.resumeInfo.textContent = "";
-    } else { uiSignedOut(); clearUI(); }
+    if (!u) { uiSignedOut(); clearUI(); return; }
+
+    uiSignedIn(u);
+
+    try { await ensureUserDoc(u); }
+    catch (e) { console.warn('[ensureUserDoc] 에러 (무시하고 진행):', e); }
+
+    try { await loadMyStats(); }
+    catch (e) { console.warn('[loadMyStats] 에러 (무시하고 진행):', e); }
+
+    try { buildBookSelect(); }
+    catch (e) { console.error('[buildBookSelect] 에러:', e); }
+
+    try { loadLeaderboard(); }
+    catch (e) { console.warn('[loadLeaderboard] 에러 (무시):', e); }
+
+    if (state.myStats?.last?.bookKo && state.myStats?.last?.chapter) {
+      const {bookKo, chapter} = state.myStats.last;
+      els.resumeInfo.textContent = `마지막 위치: ${bookKo} ${chapter}장`;
+    } else { els.resumeInfo.textContent = ""; }
   });
 
   async function ensureUserDoc(u){
@@ -118,10 +172,17 @@
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, {merge:true});
   }
+
   async function loadMyStats(){
     if (!db || !user) return;
-    const snap = await db.collection("users").doc(user.uid).get();
-    if (snap.exists){
+    let snap;
+    try {
+      snap = await db.collection("users").doc(user.uid).get();
+    } catch (e) {
+      console.warn('users/{uid} 읽기 실패 (규칙 확인 필요):', e);
+      return;
+    }
+    if (snap?.exists){
       const d = snap.data();
       state.myStats.versesRead = d.versesRead || 0;
       state.myStats.chaptersRead = d.chaptersRead || 0;
@@ -130,39 +191,54 @@
     }
     // per-book progress
     const p = {};
-    const qs = await db.collection("users").doc(user.uid).collection("progress").get();
-    qs.forEach(doc => { p[doc.id] = {readChapters: new Set((doc.data().readChapters)||[])}; });
+    try {
+      const qs = await db.collection("users").doc(user.uid).collection("progress").get();
+      qs.forEach(doc => { p[doc.id] = {readChapters: new Set((doc.data().readChapters)||[])}; });
+    } catch (e) {
+      console.warn('progress 읽기 실패 (규칙 확인 필요):', e);
+    }
     state.progress = p;
   }
+
   async function saveLastPosition(){
     if (!db || !user) return;
-    await db.collection("users").doc(user.uid).set({
-      last: state.myStats.last,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, {merge:true});
+    try {
+      await db.collection("users").doc(user.uid).set({
+        last: state.myStats.last,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, {merge:true});
+    } catch (e) { console.warn('saveLastPosition 실패:', e); }
   }
+
   async function markChapterDone(bookId, chapter){
     if (!state.progress[bookId]) state.progress[bookId] = {readChapters:new Set()};
     state.progress[bookId].readChapters.add(chapter);
     if (db && user){
-      await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
-        .set({readChapters: Array.from(state.progress[bookId].readChapters)}, {merge:true});
-      await db.collection("users").doc(user.uid)
-        .set({chaptersRead: firebase.firestore.FieldValue.increment(1),
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
-      state.myStats.chaptersRead += 1;
-      els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`;
-      buildChapterGrid();
-      buildMatrix();
+      try {
+        await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
+          .set({readChapters: Array.from(state.progress[bookId].readChapters)}, {merge:true});
+        await db.collection("users").doc(user.uid)
+          .set({chaptersRead: firebase.firestore.FieldValue.increment(1),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
+        state.myStats.chaptersRead += 1;
+        els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`;
+        buildChapterGrid();
+        buildMatrix();
+      } catch (e) {
+        console.warn('markChapterDone 실패:', e);
+      }
     }
   }
+
   async function incVersesRead(n=1){
     state.myStats.versesRead += n;
     els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`;
     if (db && user){
-      await db.collection("users").doc(user.uid)
-        .set({versesRead: firebase.firestore.FieldValue.increment(n),
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
+      try {
+        await db.collection("users").doc(user.uid)
+          .set({versesRead: firebase.firestore.FieldValue.increment(n),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()}, {merge:true});
+      } catch (e) { console.warn('incVersesRead 실패:', e); }
     }
   }
 
@@ -179,6 +255,7 @@
     state.currentBookKo = null; state.currentChapter = null;
     state.verses = []; state.currentVerseIdx = null;
   }
+
   function buildBookSelect(){
     els.bookSelect.innerHTML = "";
     for (const b of BOOKS){
@@ -187,12 +264,20 @@
       els.bookSelect.appendChild(opt);
     }
     const last = state.myStats?.last;
-    if (last?.bookKo){ els.bookSelect.value = last.bookKo; state.currentBookKo = last.bookKo; buildChapterGrid();
-      if (last.chapter){ selectChapter(last.chapter).then(()=>{
-        if (Number.isInteger(last.verse)){ state.currentVerseIdx = Math.max(0,(last.verse||1)-1); updateVerseText(); }
-      }); }
-    } else { els.bookSelect.value = BOOKS[0]?.ko || ""; state.currentBookKo = els.bookSelect.value; buildChapterGrid(); }
+    if (last?.bookKo){
+      els.bookSelect.value = last.bookKo; state.currentBookKo = last.bookKo; buildChapterGrid();
+      if (last.chapter){
+        selectChapter(last.chapter).then(()=>{
+          if (Number.isInteger(last.verse)){ state.currentVerseIdx = Math.max(0,(last.verse||1)-1); updateVerseText(); }
+        });
+      }
+    } else {
+      els.bookSelect.value = BOOKS[0]?.ko || "";
+      state.currentBookKo = els.bookSelect.value;
+      buildChapterGrid();
+    }
   }
+
   els.bookSelect.addEventListener('change', () => {
     state.currentBookKo = els.bookSelect.value;
     state.currentChapter = null; state.verses = []; state.currentVerseIdx = null;
@@ -201,6 +286,7 @@
     state.myStats.last = {bookKo: state.currentBookKo, chapter: null, verse: 0};
     saveLastPosition();
   });
+
   function buildChapterGrid(){
     const b = getBookByKo(state.currentBookKo); if (!b) return;
     els.chapterGrid.innerHTML = "";
@@ -213,6 +299,7 @@
       els.chapterGrid.appendChild(btn);
     }
   }
+
   function buildVerseGrid(){
     els.verseGrid.innerHTML = "";
     for (let i=1;i<=state.verses.length;i++){
@@ -237,7 +324,6 @@
       await loadBible();
       if (!state.bible){ els.verseText.innerHTML = `<span class="muted">bible.json 로딩 실패</span>`; return; }
     }
-    // bible.json 스키마: { "창세기": { "1": {"1":"...","2":"..."}, "2": {...} }, ... }
     const bookData = state.bible[state.currentBookKo];
     const chObj = bookData ? bookData[String(chapter)] : null;
     if (!chObj){
@@ -246,7 +332,6 @@
       els.verseGrid.innerHTML = "";
       return;
     }
-    // chObj: { "1":"...", "2":"..." } → verses array sorted by numeric key
     const entries = Object.entries(chObj).map(([k,v]) => [parseInt(k,10), String(v)]).sort((a,b)=>a[0]-b[0]);
     state.verses = entries.map(e=>e[1]);
 
@@ -255,6 +340,7 @@
     updateVerseText();
     state.myStats.last = {bookKo: b.ko, chapter, verse: 1}; saveLastPosition();
   }
+
   function updateVerseText(){
     const v = state.verses[state.currentVerseIdx] || "";
     els.locLabel.textContent = `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx+1}절`;
@@ -317,7 +403,13 @@
   // ---------- Leaderboard & Matrix ----------
   async function loadLeaderboard(){
     if (!db) return;
-    const qs = await db.collection("users").orderBy("versesRead","desc").limit(20).get();
+    let qs;
+    try {
+      qs = await db.collection("users").orderBy("versesRead","desc").limit(20).get();
+    } catch (e) {
+      console.warn('리더보드 로드 실패(규칙 확인):', e);
+      return;
+    }
     const list=[]; qs.forEach(doc=>list.push({id:doc.id, ...doc.data()}));
     els.leaderList.innerHTML=""; list.forEach((u,idx)=>{
       const li=document.createElement('li'); const name=u.displayName||"익명";
@@ -325,6 +417,7 @@
       els.leaderList.appendChild(li);
     });
   }
+
   function buildMatrix(){
     if (!user) return;
     const maxCh = Math.max(...BOOKS.map(b=>b.ch));
