@@ -1,4 +1,4 @@
-/* 말씀읽기APP — 모바일 퍼스트 + PWA + 전화번호 인증(+82 자동) + bible.json */
+/* 말씀읽기APP — 모바일 퍼스트 + PWA + 익명 로그인 + bible.json */
 (() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
@@ -11,9 +11,6 @@
 
   // ---------- Firebase ----------
   let auth, db, user;
-  let recaptchaVerifier = null;
-  let confirmationResult = null;
-
   function initFirebase() {
     if (!window.firebaseConfig || typeof firebase === "undefined") {
       console.error("[Firebase] SDK/config 누락");
@@ -30,28 +27,23 @@
   const scrLogin = document.getElementById("screen-login");
   const scrApp   = document.getElementById("screen-app");
   function showScreen(name) {
-    if (name === "login") {
-      scrLogin?.classList.add("show"); scrApp?.classList.remove("show");
-    } else {
-      scrApp?.classList.add("show"); scrLogin?.classList.remove("show");
-    }
+    if (name === "login") { scrLogin?.classList.add("show"); scrApp?.classList.remove("show"); }
+    else { scrApp?.classList.add("show"); scrLogin?.classList.remove("show"); }
   }
 
   // ---------- DOM ----------
   const els = {
+    // 로그인
     displayName: document.getElementById("displayName"),
-    phoneNumber: document.getElementById("phoneNumber"),
-    btnSendCode: document.getElementById("btnSendCode"),
-    recaptchaContainer: document.getElementById("recaptchaContainer"),
-    codeArea: document.getElementById("codeArea"),
-    smsCode: document.getElementById("smsCode"),
-    btnVerifyCode: document.getElementById("btnVerifyCode"),
+    btnLogin: document.getElementById("btnLogin"),
 
+    // 상단(앱)
     signedIn: document.getElementById("signedIn"),
     userName: document.getElementById("userName"),
     userPhoto: document.getElementById("userPhoto"),
     btnSignOut: document.getElementById("btnSignOut"),
 
+    // 선택/리더
     bookSelect: document.getElementById("bookSelect"),
     chapterGrid: document.getElementById("chapterGrid"),
     verseGrid: document.getElementById("verseGrid"),
@@ -59,13 +51,17 @@
     locLabel: document.getElementById("locLabel"),
     verseCount: document.getElementById("verseCount"),
     myStats: document.getElementById("myStats"),
+
+    // 리더보드
     leaderList: document.getElementById("leaderList"),
 
+    // 모달(읽기 현황표)
     btnProgressMatrix: document.getElementById("btnProgressMatrix"),
     btnCloseMatrix: document.getElementById("btnCloseMatrix"),
     matrixModal: document.getElementById("matrixModal"),
     matrixWrap: document.getElementById("matrixWrap"),
 
+    // FABs
     btnPrevVerse: document.getElementById("btnPrevVerse"),
     btnNextVerse: document.getElementById("btnNextVerse"),
     btnToggleMic: document.getElementById("btnToggleMic"),
@@ -79,8 +75,7 @@
   const state = {
     bible: null, currentBookKo: null, currentChapter: null,
     verses: [], currentVerseIdx: 0, listening:false, recog:null,
-    progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
-    pendingDisplayName:null
+    progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}}
   };
 
   // ---------- bible.json ----------
@@ -96,63 +91,18 @@
   }
   loadBible();
 
-  // ---------- KR 번호 → E.164(+82) ----------
-  function toKRE164(raw) {
-    if (!raw) return null;
-    const digits = String(raw).replace(/\D/g, "");
-    if (!digits) return null;
-    if (digits.startsWith("82")) return "+" + digits;
-    if (digits.startsWith("0")) return "+82" + digits.slice(1);
-    if (digits.length >= 8 && digits.length <= 11) return "+82" + digits;
-    return null;
-  }
-
-  // ---------- reCAPTCHA ----------
-  function ensureRecaptcha() {
-    if (recaptchaVerifier) return recaptchaVerifier;
-    recaptchaVerifier = new firebase.auth.RecaptchaVerifier("recaptchaContainer", { size: "invisible" });
-    return recaptchaVerifier;
-  }
-
-  // ---------- Phone Auth (+82 자동) ----------
-  els.btnSendCode?.addEventListener("click", async () => {
+  // ---------- 로그인(익명 + 표시이름 저장) ----------
+  els.btnLogin?.addEventListener("click", async () => {
     const name = (els.displayName?.value || "").trim();
-    const phoneRaw = (els.phoneNumber?.value || "").trim();
-    if (!name) { alert("표시이름을 입력하세요."); els.displayName?.focus(); return; }
+    if (!name) { alert("표시이름을 입력하세요."); return; }
 
-    const e164 = toKRE164(phoneRaw);
-    if (!e164) { alert("올바른 휴대폰 번호를 입력하세요. 예: 010-1234-5678"); els.phoneNumber?.focus(); return; }
-
-    state.pendingDisplayName = name;
     try {
-      const appVerifier = ensureRecaptcha();
-      confirmationResult = await auth.signInWithPhoneNumber(e164, appVerifier);
-      els.codeArea?.classList.remove("hidden");
-      alert("인증코드를 문자로 보냈습니다.");
+      const cred = await auth.signInAnonymously();
+      user = cred.user;
+      try { await user.updateProfile({ displayName: name }); } catch (_) {}
+      await ensureUserDoc(user, name);
     } catch (e) {
-      console.error("[Phone] send error:", e.code, e.message);
-      alert("인증코드 전송 실패: " + e.message);
-      try { recaptchaVerifier?.render().then(id => grecaptcha.reset(id)); } catch (_) {}
-    }
-  });
-
-  els.btnVerifyCode?.addEventListener("click", async () => {
-    if (!confirmationResult) { alert("먼저 인증코드를 받아주세요."); return; }
-    const code = (els.smsCode?.value || "").trim();
-    if (!code) { alert("인증코드를 입력하세요."); return; }
-    try {
-      const res = await confirmationResult.confirm(code);
-      const u = res.user;
-      if (state.pendingDisplayName) {
-        try { await u.updateProfile({ displayName: state.pendingDisplayName }); } catch (e) {}
-        try { await ensureUserDoc(u, state.pendingDisplayName); } catch (e) {}
-      }
-      els.smsCode.value = "";
-      els.codeArea?.classList.add("hidden");
-      state.pendingDisplayName = null;
-    } catch (e) {
-      console.error("[Phone] confirm error:", e.code, e.message);
-      alert("인증코드 확인 실패: " + e.message);
+      alert("로그인 실패: " + e.message);
     }
   });
 
@@ -165,7 +115,7 @@
 
     showScreen("app");
     els.signedIn?.classList.remove("hidden");
-    els.userName && (els.userName.textContent = u.displayName || u.phoneNumber || "전화 사용자");
+    els.userName && (els.userName.textContent = u.displayName || "익명");
     els.userPhoto && (els.userPhoto.src = u.photoURL || "https://avatars.githubusercontent.com/u/9919?s=200&v=4");
 
     try { await ensureUserDoc(u); } catch (e) {}
@@ -177,7 +127,7 @@
   // ---------- Firestore helpers ----------
   async function ensureUserDoc(u, overrideName) {
     if (!db) return;
-    const disp = overrideName || u.displayName || u.phoneNumber || "전화 사용자";
+    const disp = overrideName || u.displayName || "익명";
     const ref = db.collection("users").doc(u.uid);
     await ref.set({
       displayName: disp,
@@ -199,7 +149,8 @@
         state.myStats.versesRead = d.versesRead || 0;
         state.myStats.chaptersRead = d.chaptersRead || 0;
         state.myStats.last = d.last || { bookKo: null, chapter: null, verse: 0 };
-        els.myStats && (els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
+        els.myStats && (els.myStats.textContent =
+          `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
       }
     } catch (e) {}
 
@@ -229,9 +180,11 @@
         await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
           .set({ readChapters: Array.from(state.progress[bookId].readChapters) }, { merge: true });
         await db.collection("users").doc(user.uid)
-          .set({ chaptersRead: firebase.firestore.FieldValue.increment(1), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          .set({ chaptersRead: firebase.firestore.FieldValue.increment(1),
+                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
         state.myStats.chaptersRead += 1;
-        els.myStats && (els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
+        els.myStats && (els.myStats.textContent =
+          `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
         buildChapterGrid();
         buildMatrix();
       } catch (e) {}
@@ -240,11 +193,13 @@
 
   async function incVersesRead(n = 1) {
     state.myStats.versesRead += n;
-    els.myStats && (els.myStats.textContent = `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
+    els.myStats && (els.myStats.textContent =
+      `절 ${state.myStats.versesRead.toLocaleString()} · 장 ${state.myStats.chaptersRead.toLocaleString()}`);
     if (db && user) {
       try {
         await db.collection("users").doc(user.uid)
-          .set({ versesRead: firebase.firestore.FieldValue.increment(n), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          .set({ versesRead: firebase.firestore.FieldValue.increment(n),
+                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
       } catch (e) {}
     }
   }
@@ -281,7 +236,9 @@
         });
       }
     } else {
-      els.bookSelect.value = BOOKS[0]?.ko || ""; state.currentBookKo = els.bookSelect.value; buildChapterGrid();
+      els.bookSelect.value = BOOKS[0]?.ko || "";
+      state.currentBookKo = els.bookSelect.value;
+      buildChapterGrid();
     }
   }
 
@@ -345,13 +302,16 @@
 
   function updateVerseText() {
     const v = state.verses[state.currentVerseIdx] || "";
-    els.locLabel && (els.locLabel.textContent = `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx + 1}절`);
+    els.locLabel && (els.locLabel.textContent =
+      `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx + 1}절`);
     if (els.verseText) {
       els.verseText.innerHTML = "";
       for (let i = 0; i < v.length; i++) { const s=document.createElement("span"); s.textContent=v[i]; els.verseText.appendChild(s); }
     }
-    els.verseCount && (els.verseCount.textContent = `(${state.verses.length}절 중 ${state.currentVerseIdx + 1}절)`);
-    if (els.verseGrid) { [...els.verseGrid.children].forEach((btn, idx) => btn.classList.toggle("active", idx===state.currentVerseIdx)); }
+    els.verseCount && (els.verseCount.textContent =
+      `(${state.verses.length}절 중 ${state.currentVerseIdx + 1}절)`);
+    if (els.verseGrid) { [...els.verseGrid.children].forEach((btn, idx) =>
+      btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
   // ---------- Speech Recognition ----------
@@ -367,6 +327,7 @@
   function startListening(showAlert=true){ if(state.listening) return; state.recog=getRecognition(); if(!state.recog){ els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(데스크톱 Chrome 권장)"); if(showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다."); return; } state.recog.onresult=onSpeechResult; state.recog.onend=()=>{ if(state.listening){ try{ state.recog.start(); }catch(_){} } }; try{ state.recog.start(); state.listening=true; els.btnToggleMic && (els.btnToggleMic.textContent="⏹️"); }catch(e){ alert("음성인식 시작 실패: "+e.message); } }
   function stopListening(resetBtn=true){ if(state.recog){ try{ state.recog.onresult=null; state.recog.onend=null; state.recog.stop(); }catch(_){} } state.listening=false; if(resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️"; }
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
+  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses_length-1){} }); // guard
   els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
   els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
 
@@ -392,7 +353,12 @@
       const tr=document.createElement("tr");
       const th=document.createElement("th"); th.className="book"; th.textContent=b.ko; tr.appendChild(th);
       const read=state.progress[b.id]?.readChapters||new Set();
-      for(let c=1;c<=maxCh;c++){ const td=document.createElement("td"); if(c<=b.ch){ td.textContent=" "; td.style.background = read.has(c) ? "rgba(67,209,122,0.6)" : "rgba(120,120,140,0.25)"; td.title=`${b.ko} ${c}장`; } else { td.style.background="transparent"; } tr.appendChild(td); }
+      for(let c=1;c<=maxCh;c++){
+        const td=document.createElement("td");
+        if(c<=b.ch){ td.textContent=" "; td.style.background = read.has(c) ? "rgba(67,209,122,0.6)" : "rgba(120,120,140,0.25)"; td.title=`${b.ko} ${c}장`; }
+        else { td.style.background="transparent"; }
+        tr.appendChild(td);
+      }
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
