@@ -54,15 +54,15 @@
 
   // ---------- State ----------
   const state = {
-    currentBookKo: null,   // "창세기"
-    currentChapter: null,  // number
+    currentBookKo: null,
+    currentChapter: null,
     verses: [],
     currentVerseIdx: null,
     listening: false,
     recog: null,
     progress: {},
     myStats: {versesRead:0, chaptersRead:0, last:{bookKo:null, chapter:null, verse:0}},
-    bible: null          // loaded bible.json
+    bible: null
   };
 
   const BOOKS = window.BOOKS || [];
@@ -93,30 +93,26 @@
     els.signedOut.classList.remove('hidden');
   };
 
-  // ----- 리다이렉트 결과 회수 (팝업 이슈 방지: redirect only) -----
-  auth?.getRedirectResult?.()
-    .then((result) => {
-      if (result && result.user) {
-        console.log('[Auth] redirect success:', result.user.uid);
-      }
-    })
-    .catch(err => {
-      console.warn('[Auth] getRedirectResult error:', err);
-    });
+  // ----- 리다이렉트 결과 회수(팝업 차단 환경 완전 대응) -----
+  auth?.getRedirectResult?.().then((result) => {
+    if (result && result.user) {
+      console.log('[Auth] redirect success:', result.user.uid);
+    }
+  }).catch(err => {
+    console.warn('[Auth] getRedirectResult error:', err);
+  });
 
-  // ----- 로그인 버튼: 무조건 리다이렉트 사용 -----
+  // ----- 로그인 버튼: 항상 리다이렉트 사용 -----
   els.btnGoogle?.addEventListener('click', async () => {
     if (!auth) { alert("Firebase 초기화 실패: firebaseConfig.js/SDK 로드 확인"); return; }
     const provider = new firebase.auth.GoogleAuthProvider();
     await auth.signInWithRedirect(provider);
   });
-
   els.btnAnon?.addEventListener('click', async () => {
     if (!auth) { alert("Firebase 초기화 실패: firebaseConfig.js/SDK 로드 확인"); return; }
     try { await auth.signInAnonymously(); }
     catch (e) { alert("익명 로그인 오류: "+e.message); }
   });
-
   els.btnSignOut?.addEventListener('click', async () => { try { await auth?.signOut(); } catch(e){ console.warn(e); } });
 
   // ---------- Auth State ----------
@@ -397,8 +393,7 @@
     }
     const list=[]; qs.forEach(doc=>list.push({id:doc.id, ...doc.data()}));
     els.leaderList.innerHTML=""; list.forEach((u,idx)=>{
-      const name=u.displayName||"익명";
-      const li=document.createElement('li');
+      const li=document.createElement('li'); const name=u.displayName||"익명";
       li.innerHTML = `<strong>${idx+1}위</strong> ${name} · 절 ${Number(u.versesRead||0).toLocaleString()} · 장 ${Number(u.chaptersRead||0).toLocaleString()}`;
       els.leaderList.appendChild(li);
     });
@@ -430,5 +425,20 @@
   }
   els.btnProgressMatrix.addEventListener('click', ()=>{ buildMatrix(); els.matrixModal.classList.remove('hidden'); });
   els.btnCloseMatrix.addEventListener('click', ()=>{ els.matrixModal.classList.add('hidden'); });
+
+  // ----- 오버레이 클릭/ESC로 모달 닫기 (눌림 문제 방지) -----
+  (function enhanceModalClose(){
+    const modal = els.matrixModal;
+    const body  = modal?.querySelector('.modal-body');
+    modal?.addEventListener('click', (e) => {
+      if (!body) return;
+      if (!body.contains(e.target)) modal.classList.add('hidden');
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+        modal.classList.add('hidden');
+      }
+    });
+  })();
 
 })();
