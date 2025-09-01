@@ -1,198 +1,50 @@
-/* ---------- Reset & Base ---------- */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif;
-  background: #0b1020;
-  color: #eaf0ff;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* =========================
+   styles.css — 말씀읽기APP v2
+   (간결 · 다크톤 · 모바일 우선)
+   ========================= */
+:root{
+  --bg:#0b1020; --panel:#10183a; --ink:#eaf0ff; --muted:#a7b3d4; --brand:#6aa6ff; --accent:#a176ff; --ok:#4cd97b; --danger:#ff6a6a;
 }
-
-/* Screen routing */
-.screen { display: none; }
-.screen.show { display: block; }
-
-/* ---------- Login / Hero ---------- */
-.hero {
-  position: relative;             /* glow가 클릭 가로채지 않도록 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100dvh;
-  padding: 24px 16px;
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:ui-sans-serif,system-ui,Apple SD Gothic Neo,Noto Sans KR,Segoe UI,Roboto,sans-serif;
+  color:var(--ink); background:radial-gradient(1200px 800px at 80% -10%,#1a2650 0%,#0b1020 45%);
 }
-.glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;           /* 버튼 클릭 통과 */
-  background:
-    radial-gradient(600px 300px at 80% 10%, rgba(61, 87, 255, 0.15), transparent 60%),
-    radial-gradient(800px 500px at 20% 100%, rgba(53, 219, 142, 0.12), transparent 60%);
-  filter: blur(0.5px);
+.hidden{display:none !important}
+.container{max-width:980px;margin:0 auto;padding:20px}
+.card{
+  background:var(--panel); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.2);
 }
-.login-card {
-  position: relative;
-  width: 100%;
-  max-width: 380px;
-  border-radius: 14px;
-  padding: 18px 16px;
-  background: #10183a;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+.h1{font-size:28px;font-weight:800;letter-spacing:.2px;margin:0 0 12px}
+.p{color:var(--muted);margin:4px 0 16px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.col{flex:1 1 260px}
+
+input[type="email"], input[type="password"], input[type="text"]{
+  width:100%; background:#0e1533; border:1px solid rgba(255,255,255,.12); color:var(--ink);
+  border-radius:12px; padding:12px 14px; outline:none; transition:border .2s ease;
 }
-.login-head { text-align: center; margin-bottom: 12px; }
-.logo-hero { font-size: 48px; line-height: 1; margin-bottom: 6px; }
-.muted { color: #9fb0d9; }
-.sm { font-size: 12px; }
-.smallprint { font-size: 11px; color: #8ea0ca; }
+input:focus{border-color:var(--brand)}
 
-.form-label { display: block; margin: 8px 0 6px; font-size: 14px; color: #cfe0ff; }
-.input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #273056;
-  border-radius: 10px;
-  background: #0d1430;
-  color: #eaf0ff;
-  outline: none;
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; user-select:none;
+  border:0; border-radius:12px; padding:12px 14px; font-weight:700; letter-spacing:.2px;
+  background:linear-gradient(180deg,#6aa6ff,#5179ff); color:white; box-shadow:0 8px 20px rgba(81,121,255,.25);
 }
-.input:focus { border-color: #6aa6ff; box-shadow: 0 0 0 3px rgba(106,166,255,0.2); }
+.btn.secondary{background:linear-gradient(180deg,#a176ff,#7c54ff)}
+.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:var(--ink)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
 
-.row { display: flex; align-items: center; gap: 8px; }
-.row.between { justify-content: space-between; }
-.mt12 { margin-top: 12px; }
-.mt16 { margin-top: 16px; }
+.form-row{display:grid;grid-template-columns:1fr;gap:10px}
+@media (min-width:640px){.form-row{grid-template-columns:1fr 1fr}}
 
-/* ---------- Buttons ---------- */
-.btn {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  background: #2b335a;
-  color: #fff;
-  transition: transform .05s ease, background .15s ease, opacity .2s;
-  user-select: none;
-}
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: .6; cursor: default; }
-.btn.fill { background: #2b335a; }
-.btn.primary { background: #6aa6ff; color: #0b1020; }
-.btn.small { font-size: 12px; padding: 6px 10px; border-radius: 8px; }
-.btn.danger { background: #ff6a6a; color: #fff; }
+.hr{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);margin:16px 0}
 
-/* ---------- App Bar ---------- */
-.appbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: #10183a;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  border-bottom: 1px solid #1b2448;
-}
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.brand .logo { font-size: 18px; }
-.actions { display: flex; gap: 6px; }
-.userbox { display: flex; align-items: center; gap: 8px; }
-.userbox.hidden { display: none; }
-.avatar { width: 26px; height: 26px; border-radius: 50%; background: #2b335a; }
+.header{position:sticky;top:0;backdrop-filter:blur(8px);background:rgba(11,16,32,.6);border-bottom:1px solid rgba(255,255,255,.06)}
+.header-inner{max-width:980px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-weight:800;letter-spacing:.3px}
 
-/* ---------- Main / Cards ---------- */
-.container { padding: 12px; max-width: 900px; margin: 0 auto; }
-.card {
-  background: #10183a;
-  border: 1px solid #1b2448;
-  border-radius: 14px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-summary { cursor: pointer; font-weight: 600; }
-.field-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#0e1533;border:1px solid rgba(255,255,255,.12);color:var(--muted)}
 
-.select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #273056;
-  border-radius: 10px;
-  background: #0d1430;
-  color: #eaf0ff;
-}
-
-/* ---------- Grids ---------- */
-.grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.grid.small button { font-size: 12px; padding: 6px 10px; }
-
-.chip {
-  padding: 8px 12px;
-  border: 1px solid #273056;
-  border-radius: 999px;
-  background: #18204a;
-  color: #eaf0ff;
-  cursor: pointer;
-}
-.chip.active { background: #6aa6ff; color: #0b1020; border-color: #6aa6ff; }
-.chip.done   { background: #43d17a; color: #072216; border-color: #43d17a; }
-
-/* ---------- Reader ---------- */
-.reader-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.loc { font-weight: 700; }
-.verse-container {
-  min-height: 120px;
-  padding: 10px;
-  border: 1px solid #273056;
-  border-radius: 12px;
-  background: #0d1430;
-}
-.verse-text { line-height: 1.9; font-size: 16px; word-break: keep-all; }
-.verse-text span.read { color: #6aa6ff; }
-
-/* ---------- FAB Controls ---------- */
-.fab-col {
-  position: fixed;
-  right: 16px; bottom: 16px;
-  display: flex; flex-direction: column; gap: 10px;
-  z-index: 8;
-}
-.fab {
-  width: 52px; height: 52px;
-  border-radius: 50%;
-  border: none;
-  font-size: 20px;
-  background: #2b335a;
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
-  cursor: pointer;
-}
-.fab.primary { background: #6aa6ff; color: #0b1020; }
-
-/* ---------- Modal ---------- */
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; }
-.modal.hidden { display: none; }
-.modal-body {
-  width: 92%;
-  max-width: 900px;
-  background: #10183a;
-  border: 1px solid #1b2448;
-  border-radius: 14px;
-  padding: 14px;
-}
-
-.matrix-wrap { overflow: auto; max-height: 70vh; margin-top: 8px; }
-.matrix { border-collapse: collapse; font-size: 11px; width: max-content; min-width: 100%; }
-.matrix th, .matrix td { border: 1px solid #273056; padding: 3px 4px; text-align: center; }
-.matrix th.book { background: #18204a; color: #eaf0ff; position: sticky; left: 0; z-index: 1; }
-
-/* ---------- Helpers ---------- */
-.hidden { display: none !important; }
-
-/* ---------- Mobile tweaks ---------- */
-@media (max-width: 480px) {
-  .verse-text { font-size: 15px; }
-  .chip { padding: 7px 10px; }
-  .fab { width: 48px; height: 48px; }
-}
+.footer{opacity:.7;font-size:12px;text-align:center;margin:30px 0}
