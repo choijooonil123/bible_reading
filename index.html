@@ -24,32 +24,44 @@
 </head>
 <body>
 
-  <!-- 로그인 화면 -->
+  <!-- A. 로그인 화면 (초기 표시) -->
   <section id="screen-login" class="screen show">
-    <div class="login-wrap">
+    <div class="hero">
+      <div class="glow"></div>
       <div class="login-card">
         <div class="login-head">
           <div class="logo-hero">📖</div>
           <h1>말씀읽기APP</h1>
-          <p class="muted">개역개정 · bible.json 기반</p>
+          <p class="muted">개역개정 · bible.json · 전화번호 인증</p>
         </div>
+
         <div class="login-body">
-          <label for="displayName">표시이름</label>
-          <input id="displayName" type="text" class="input" placeholder="예: 홍길동"/>
-          <label for="phoneNumber" class="mt12">전화번호</label>
-          <input id="phoneNumber" type="tel" class="input" placeholder="+82 10-1234-5678" inputmode="tel"/>
+          <label class="form-label" for="displayName">표시이름</label>
+          <input id="displayName" class="input" type="text" placeholder="예: 홍길동" autocomplete="name"/>
+
+          <label class="form-label mt12" for="phoneNumber">휴대폰 번호</label>
+          <input id="phoneNumber" class="input" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-1234-5678"/>
+
           <button id="btnSendCode" class="btn primary fill mt16">인증코드 받기</button>
           <div id="recaptchaContainer"></div>
+
           <div id="codeArea" class="hidden mt12">
-            <input id="smsCode" type="text" class="input" placeholder="6자리" inputmode="numeric"/>
-            <button id="btnVerifyCode" class="btn success fill mt8">로그인</button>
+            <label class="form-label" for="smsCode">인증코드</label>
+            <div class="code-inline">
+              <input id="smsCode" class="input" type="text" inputmode="numeric" maxlength="8" placeholder="6자리"/>
+              <button id="btnVerifyCode" class="btn success">로그인</button>
+            </div>
           </div>
+        </div>
+
+        <div class="login-foot muted">
+          <small>로그인 후 읽기 진도와 순위가 저장됩니다.</small>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 본화면 -->
+  <!-- B. 본화면 (로그인 후 전환) -->
   <section id="screen-app" class="screen">
     <header class="appbar">
       <div class="brand"><span class="logo">📖</span><strong>말씀읽기</strong></div>
@@ -61,35 +73,64 @@
 
     <main class="container">
       <section class="card">
-        <label for="bookSelect">성경(66권)</label>
-        <select id="bookSelect" class="select"></select>
-        <div id="chapterGrid" class="grid"></div>
-        <div id="verseGrid" class="grid small"></div>
+        <details open>
+          <summary>성경(66권) 선택</summary>
+          <div class="field-row">
+            <label for="bookSelect" class="form-label">성경</label>
+            <select id="bookSelect" class="select"></select>
+          </div>
+        </details>
+
+        <details class="mt12">
+          <summary>장 선택</summary>
+          <div id="chapterGrid" class="grid"></div>
+        </details>
+
+        <details class="mt12">
+          <summary>절 선택</summary>
+          <div id="verseGrid" class="grid small"></div>
+        </details>
       </section>
+
       <section class="card">
-        <div id="locLabel" class="loc"></div>
-        <div id="verseText" class="verse-text">절을 선택하세요.</div>
-        <div id="verseCount" class="muted"></div>
-        <strong id="myStats">—</strong>
+        <div class="reader-head">
+          <div>
+            <div id="locLabel" class="loc"></div>
+            <div id="verseCount" class="muted"></div>
+          </div>
+        </div>
+        <div id="verseContainer" class="verse-container">
+          <div id="verseText" class="verse-text">성경/장/절을 선택하세요.</div>
+          <div id="listenHint" class="muted sm">음성 인식으로 읽으면 글자가 채워집니다.</div>
+        </div>
+        <div class="row between stats">
+          <strong id="myStats">—</strong>
+          <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
+        </div>
       </section>
+
       <section class="card">
         <h3>📈 읽기 순위</h3>
         <ol id="leaderList" class="leaders"></ol>
       </section>
     </main>
 
-    <!-- FAB -->
+    <!-- 조작 FAB -->
     <div class="fab-col">
-      <button id="btnPrevVerse" class="fab">⟨</button>
-      <button id="btnToggleMic" class="fab primary">🎙️</button>
-      <button id="btnNextVerse" class="fab">⟩</button>
+      <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
+      <button id="btnToggleMic" class="fab primary" aria-label="음성 인식">🎙️</button>
+      <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
     </div>
 
     <!-- 현황표 모달 -->
     <div id="matrixModal" class="modal hidden">
       <div class="modal-body full">
-        <div class="row between"><h3>읽기 현황표</h3><button id="btnCloseMatrix" class="btn small">닫기</button></div>
+        <div class="row between">
+          <h3>읽기 현황표</h3>
+          <button id="btnCloseMatrix" class="btn small" type="button">닫기</button>
+        </div>
         <div id="matrixWrap" class="matrix-wrap"></div>
+        <div class="muted smallprint">* 초록=완독 장, 회색=미완료 (가로 스크롤 가능)</div>
       </div>
     </div>
   </section>
