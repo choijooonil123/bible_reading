@@ -35,7 +35,8 @@
   const els = {
     // 로그인
     displayName: document.getElementById("displayName"),
-    btnLogin: document.getElementById("btnLogin"),
+    phoneLocal:  document.getElementById("phoneLocal"),
+    btnLogin:    document.getElementById("btnLogin"),
 
     // 상단(앱)
     signedIn: document.getElementById("signedIn"),
@@ -55,7 +56,7 @@
     // 리더보드
     leaderList: document.getElementById("leaderList"),
 
-    // 모달(읽기 현황표)
+    // 현황표
     btnProgressMatrix: document.getElementById("btnProgressMatrix"),
     btnCloseMatrix: document.getElementById("btnCloseMatrix"),
     matrixModal: document.getElementById("matrixModal"),
@@ -91,16 +92,39 @@
   }
   loadBible();
 
-  // ---------- 로그인(익명 + 표시이름 저장) ----------
+  // ---------- 전화번호 유효성(국가번호 없이 국내 형식만) ----------
+  function normalizeKRLocalPhone(raw) {
+    if (!raw) return "";
+    const d = String(raw).replace(/\D/g, "");
+    // 02, 0xx 로 시작하는 9~11자리 허용
+    if (!/^0\d{8,10}$/.test(d)) return ""; // 잘못된 형식
+    // 보기 좋게 포매팅(간단)
+    if (d.startsWith("02")) {
+      return d.length === 9 ? d.replace(/(\d{2})(\d{3})(\d{4})/, "$1-$2-$3")
+                            : d.replace(/(\d{2})(\d{4})(\d{4})/, "$1-$2-$3");
+    }
+    return d.length === 10 ? d.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")
+                           : d.replace(/(\d{3})(\d{4})(\d{4})/, "$1-$2-$3");
+  }
+
+  // ---------- 로그인(익명) ----------
   els.btnLogin?.addEventListener("click", async () => {
     const name = (els.displayName?.value || "").trim();
+    const phoneLocalRaw = (els.phoneLocal?.value || "").trim();
     if (!name) { alert("표시이름을 입력하세요."); return; }
+
+    const phoneLocal = normalizeKRLocalPhone(phoneLocalRaw);
+    if (phoneLocalRaw && !phoneLocal) {
+      alert("전화번호를 010-1234-5678 형식으로 입력하세요. (국가번호 없이)");
+      els.phoneLocal?.focus();
+      return;
+    }
 
     try {
       const cred = await auth.signInAnonymously();
       user = cred.user;
       try { await user.updateProfile({ displayName: name }); } catch (_) {}
-      await ensureUserDoc(user, name);
+      await ensureUserDoc(user, { displayName: name, phoneLocal });
     } catch (e) {
       alert("로그인 실패: " + e.message);
     }
@@ -125,19 +149,20 @@
   });
 
   // ---------- Firestore helpers ----------
-  async function ensureUserDoc(u, overrideName) {
+  async function ensureUserDoc(u, override) {
     if (!db) return;
-    const disp = overrideName || u.displayName || "익명";
     const ref = db.collection("users").doc(u.uid);
-    await ref.set({
-      displayName: disp,
-      photoURL: u.photoURL || "",
+    const base = {
       versesRead: firebase.firestore.FieldValue.increment(0),
       chaptersRead: firebase.firestore.FieldValue.increment(0),
       last: state.myStats.last || null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    };
+    const payload = override
+      ? { ...base, displayName: override.displayName, phoneLocal: override.phoneLocal || "" }
+      : { ...base, displayName: u.displayName || "익명" };
+    await ref.set(payload, { merge: true });
   }
 
   async function loadMyStats() {
@@ -327,7 +352,6 @@
   function startListening(showAlert=true){ if(state.listening) return; state.recog=getRecognition(); if(!state.recog){ els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(데스크톱 Chrome 권장)"); if(showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다."); return; } state.recog.onresult=onSpeechResult; state.recog.onend=()=>{ if(state.listening){ try{ state.recog.start(); }catch(_){} } }; try{ state.recog.start(); state.listening=true; els.btnToggleMic && (els.btnToggleMic.textContent="⏹️"); }catch(e){ alert("음성인식 시작 실패: "+e.message); } }
   function stopListening(resetBtn=true){ if(state.recog){ try{ state.recog.onresult=null; state.recog.onend=null; state.recog.stop(); }catch(_){} } state.listening=false; if(resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️"; }
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
-  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses_length-1){} }); // guard
   els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
   els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
 
