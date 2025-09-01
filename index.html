@@ -3,32 +3,27 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>말씀읽기APP — bible.json 일독</title>
+  <title>말씀읽기APP — bible.json</title>
   <link rel="stylesheet" href="styles.css"/>
-  <!-- Firebase SDK (compat) -->
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
-  
-  <!-- 앱 파일들 -->
+  <!-- 앱 코드 -->
   <script src="books.js" defer></script>
-  <script src="firebaseConfig.js" defer></script> <!-- example 말고 실제 키가 든 파일 -->
+  <script src="firebaseConfig.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <span class="logo">📖</span>
-      <strong>말씀읽기APP</strong>
-      <em class="muted">개역개정 · bible.json</em>
-    </div>
+    <div class="brand"><span class="logo">📖</span><strong>말씀읽기APP</strong><em class="muted">개역개정 · bible.json</em></div>
     <div id="authArea" class="auth-area">
       <div id="signedOut" class="auth-block">
         <button id="btnGoogle" class="btn">Google로 로그인</button>
         <button id="btnAnon" class="btn ghost">빠른 시작(익명)</button>
       </div>
       <div id="signedIn" class="auth-block hidden">
-        <img id="userPhoto" class="avatar" alt="user"/>
+        <img id="userPhoto" class="avatar"/>
         <span id="userName"></span>
         <button id="btnSignOut" class="btn danger">로그아웃</button>
       </div>
@@ -37,79 +32,45 @@
 
   <main class="layout">
     <aside class="panel selectors">
-      <div class="row">
-        <label for="bookSelect">성경(66권):</label>
-        <select id="bookSelect"></select>
-      </div>
+      <div class="row"><label for="bookSelect">성경(66권):</label><select id="bookSelect"></select></div>
       <div class="row between">
-        <div class="row">
-          <button id="btnProgressMatrix" class="btn small">읽기 현황표</button>
-        </div>
-        <div class="row">
-          <span id="resumeInfo" class="muted"></span>
-        </div>
+        <button id="btnProgressMatrix" class="btn small">읽기 현황표</button>
+        <span id="resumeInfo" class="muted"></span>
       </div>
-
-      <section>
-        <h3>장 선택</h3>
-        <div id="chapterGrid" class="grid"></div>
-      </section>
-
-      <section>
-        <h3>절 선택</h3>
-        <div id="verseGrid" class="grid small"></div>
-      </section>
+      <section><h3>장 선택</h3><div id="chapterGrid" class="grid"></div></section>
+      <section><h3>절 선택</h3><div id="verseGrid" class="grid small"></div></section>
     </aside>
 
     <section class="panel reader">
       <div class="reader-head">
-        <div>
-          <div id="locLabel" class="loc"></div>
-          <div id="verseCount" class="muted"></div>
-        </div>
+        <div><div id="locLabel" class="loc"></div><div id="verseCount" class="muted"></div></div>
         <div class="row">
           <button id="btnPrevVerse" class="btn small">이전 절</button>
           <button id="btnToggleMic" class="btn">🎙️ 음성인식 시작</button>
           <button id="btnNextVerse" class="btn small">다음 절</button>
         </div>
       </div>
-
       <div id="verseContainer" class="verse-container">
         <div id="verseText" class="verse-text">왼쪽에서 성경, 장, 절을 선택하세요.</div>
-        <div id="listenHint" class="muted">음성인식이 지원되는 브라우저(데스크톱 Chrome 권장)에서 읽으면, 읽은 글자가 색으로 채워집니다.</div>
+        <div id="listenHint" class="muted">음성인식이 지원되는 브라우저에서 읽으면 글자가 색으로 채워집니다.</div>
       </div>
-
       <div class="row between stats">
-        <div>
-          <span>내 진도: </span>
-          <strong id="myStats">—</strong>
-        </div>
-        <div>
-          <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
-        </div>
+        <strong id="myStats">—</strong>
+        <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
       </div>
-
-      <section class="leaderboard">
-        <h3>📈 읽기 순위</h3>
-        <ol id="leaderList" class="leaders"></ol>
-      </section>
+      <section class="leaderboard"><h3>📈 읽기 순위</h3><ol id="leaderList" class="leaders"></ol></section>
     </section>
   </main>
 
+  <!-- 모달 -->
   <div id="matrixModal" class="modal hidden">
     <div class="modal-body">
-      <div class="row between">
-        <h3>읽기 현황표 (행: 66권, 열: 장)</h3>
-        <button id="btnCloseMatrix" class="btn small" type="button">닫기</button>
-      </div>
+      <div class="row between"><h3>읽기 현황표 (행: 66권, 열: 장)</h3><button id="btnCloseMatrix" class="btn small" type="button">닫기</button></div>
       <div id="matrixWrap" class="matrix-wrap"></div>
-      <div class="muted smallprint">* 초록=완독 장, 회색=미완료. 표는 가로 스크롤 가능합니다.</div>
+      <div class="muted smallprint">* 초록=완독 장, 회색=미완료. 표는 가로 스크롤 가능.</div>
     </div>
   </div>
 
-  <footer class="footer muted">
-    <span>ⓒ 말씀읽기APP · GitHub Pages + Firebase</span>
-    <span>음성인식: Web Speech API (실험적 · iOS 브라우저 제한 있음)</span>
-  </footer>
+  <footer class="footer muted"><span>ⓒ 말씀읽기APP</span><span>Firebase + GitHub Pages</span></footer>
 </body>
 </html>
