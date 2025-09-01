@@ -38,7 +38,14 @@
         <div class="login-body">
           <label class="form-label" for="displayName">표시이름</label>
           <input id="displayName" class="input" type="text" placeholder="예: 홍길동" autocomplete="name"/>
-          <button id="btnLogin" class="btn primary fill mt16">로그인</button>
+
+          <label class="form-label mt12" for="phoneLocal">전화번호 (국가번호 없이)</label>
+          <!-- 항상 국내 형식: 010-1234-5678 처럼 입력 -->
+          <input id="phoneLocal" class="input" type="tel" inputmode="tel" autocomplete="tel"
+                 placeholder="010-1234-5678"/>
+
+          <!-- ⬇️ '인증코드 받기' / reCAPTCHA / 코드 입력 영역 제거 -->
+          <button id="btnLogin" class="btn primary fill mt16">시작하기</button>
         </div>
 
         <div class="login-foot muted">
