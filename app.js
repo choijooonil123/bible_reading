@@ -93,37 +93,22 @@
     els.signedOut.classList.remove('hidden');
   };
 
-  // ----- Redirect 결과 회수(팝업 차단 환경 대비) -----
-  if (auth?.getRedirectResult) {
-    auth.getRedirectResult().then((result) => {
+  // ----- 리다이렉트 결과 회수 (팝업 이슈 방지: redirect only) -----
+  auth?.getRedirectResult?.()
+    .then((result) => {
       if (result && result.user) {
         console.log('[Auth] redirect success:', result.user.uid);
       }
-    }).catch(err => {
+    })
+    .catch(err => {
       console.warn('[Auth] getRedirectResult error:', err);
     });
-  }
 
-  // ----- 로그인 버튼 -----
+  // ----- 로그인 버튼: 무조건 리다이렉트 사용 -----
   els.btnGoogle?.addEventListener('click', async () => {
     if (!auth) { alert("Firebase 초기화 실패: firebaseConfig.js/SDK 로드 확인"); return; }
     const provider = new firebase.auth.GoogleAuthProvider();
-    try {
-      await auth.signInWithPopup(provider);
-    } catch (e) {
-      console.warn('[Auth] popup sign-in failed → fallback to redirect:', e?.code || e);
-      const popupErrors = new Set([
-        'auth/popup-blocked',
-        'auth/popup-closed-by-user',
-        'auth/cancelled-popup-request',
-        'auth/operation-not-supported-in-this-environment'
-      ]);
-      if (popupErrors.has(e?.code)) {
-        await auth.signInWithRedirect(provider);
-      } else {
-        alert("Google 로그인 오류: " + e.message);
-      }
-    }
+    await auth.signInWithRedirect(provider);
   });
 
   els.btnAnon?.addEventListener('click', async () => {
@@ -412,7 +397,8 @@
     }
     const list=[]; qs.forEach(doc=>list.push({id:doc.id, ...doc.data()}));
     els.leaderList.innerHTML=""; list.forEach((u,idx)=>{
-      const li=document.createElement('li'); const name=u.displayName||"익명";
+      const name=u.displayName||"익명";
+      const li=document.createElement('li');
       li.innerHTML = `<strong>${idx+1}위</strong> ${name} · 절 ${Number(u.versesRead||0).toLocaleString()} · 장 ${Number(u.chaptersRead||0).toLocaleString()}`;
       els.leaderList.appendChild(li);
     });
