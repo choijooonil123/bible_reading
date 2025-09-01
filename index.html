@@ -32,26 +32,13 @@
         <div class="login-head">
           <div class="logo-hero">📖</div>
           <h1>말씀읽기APP</h1>
-          <p class="muted">개역개정 · bible.json · 전화번호 인증</p>
+          <p class="muted">개역개정 · bible.json 기반</p>
         </div>
 
         <div class="login-body">
           <label class="form-label" for="displayName">표시이름</label>
           <input id="displayName" class="input" type="text" placeholder="예: 홍길동" autocomplete="name"/>
-
-          <label class="form-label mt12" for="phoneNumber">휴대폰 번호</label>
-          <input id="phoneNumber" class="input" type="tel" inputmode="tel" autocomplete="tel" placeholder="010-1234-5678"/>
-
-          <button id="btnSendCode" class="btn primary fill mt16">인증코드 받기</button>
-          <div id="recaptchaContainer"></div>
-
-          <div id="codeArea" class="hidden mt12">
-            <label class="form-label" for="smsCode">인증코드</label>
-            <div class="code-inline">
-              <input id="smsCode" class="input" type="text" inputmode="numeric" maxlength="8" placeholder="6자리"/>
-              <button id="btnVerifyCode" class="btn success">로그인</button>
-            </div>
-          </div>
+          <button id="btnLogin" class="btn primary fill mt16">로그인</button>
         </div>
 
         <div class="login-foot muted">
@@ -66,7 +53,8 @@
     <header class="appbar">
       <div class="brand"><span class="logo">📖</span><strong>말씀읽기</strong></div>
       <div id="signedIn" class="userbox hidden">
-        <img id="userPhoto" class="avatar"/><span id="userName"></span>
+        <img id="userPhoto" class="avatar" alt="avatar"/>
+        <span id="userName"></span>
         <button id="btnSignOut" class="btn small danger">로그아웃</button>
       </div>
     </header>
