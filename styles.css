@@ -1,6 +1,6 @@
 /* =========================
-   styles.css — 말씀읽기APP v2
-   (간결 · 다크톤 · 모바일 우선)
+   styles.css — 말씀읽기APP v2 (최종)
+   다크톤 · 모바일 우선
    ========================= */
 :root{
   --bg:#0b1020; --panel:#10183a; --ink:#eaf0ff; --muted:#a7b3d4; --brand:#6aa6ff; --accent:#a176ff; --ok:#4cd97b; --danger:#ff6a6a;
@@ -36,6 +36,12 @@ input:focus, select:focus{border-color:var(--brand)}
 .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:var(--ink)}
 .btn:disabled{opacity:.6;cursor:not-allowed}
 
+/* 녹음 상태 시각화 */
+.btn.recording{
+  box-shadow:0 0 0 4px rgba(255,77,77,.25);
+  background:linear-gradient(180deg,#ff7a7a,#ff4d4d);
+}
+
 .form-row{display:grid;grid-template-columns:1fr;gap:10px}
 @media (min-width:640px){.form-row{grid-template-columns:1fr 1fr}}
 
@@ -52,54 +58,40 @@ input:focus, select:focus{border-color:var(--brand)}
 /* ===== 현황표(정수 3줄: 백/십/일 자리) ===== */
 .digit-grid{
   display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); /* 조금 넉넉하게 */
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap:10px;
 }
-
 .digit-btn{
-  display:flex;
-  flex-direction:column;
+  display:flex; flex-direction:column;
   border:1px solid rgba(255,255,255,.12);
-  background:#0e1533;
-  border-radius:14px;
-  overflow:hidden;
+  background:#0e1533; border-radius:14px; overflow:hidden;
   box-shadow:0 4px 14px rgba(0,0,0,.2);
-  cursor:pointer;
+  cursor:pointer; user-select:none;
   transition:transform .08s ease, box-shadow .2s ease, border-color .2s ease;
-  user-select:none;
-  aspect-ratio: 1 / 1;                 /* 정사각형 → 항상 동일 크기 */
-  font-variant-numeric: tabular-nums;  /* 숫자폭 동일 */
+  aspect-ratio:1/1;                /* 항상 정사각형 → 동일 크기 */
+  font-variant-numeric:tabular-nums;
 }
-
 .digit-btn:hover{
-  border-color: var(--brand);
+  border-color:var(--brand);
   box-shadow:0 6px 18px rgba(81,121,255,.25);
-  transform: translateY(-1px);
+  transform:translateY(-1px);
 }
-
 .digit-line{
-  flex:1; /* 위/중/아래 동일 높이로 3등분 */
-  display:flex; align-items:center; justify-content:center;
-  font-weight:800;
-  letter-spacing:.5px;
-  font-size: clamp(16px, 3.4vw, 22px); /* 3줄이므로 살짝 줄임 */
+  flex:1; display:flex; align-items:center; justify-content:center;
+  font-weight:800; letter-spacing:.5px;
+  font-size:clamp(16px,3.4vw,22px); /* 3줄이라 살짝 작게 */
   line-height:1;
 }
-
 .digit-line.mid{
   border-top:1px solid rgba(255,255,255,.08);
   border-bottom:1px solid rgba(255,255,255,.08);
 }
-
 .digit-btn.active{
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px rgba(81,121,255,.18);
+  outline:2px solid var(--brand); outline-offset:2px;
+  box-shadow:0 0 0 4px rgba(81,121,255,.18);
 }
-
 .digit-btn:focus-visible{
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline:2px solid var(--accent); outline-offset:2px;
 }
 
 /* ===== 모드 토글(장/절) ===== */
@@ -108,18 +100,15 @@ input:focus, select:focus{border-color:var(--brand)}
   border-radius:12px; overflow:hidden;
 }
 .seg-btn{
-  appearance:none; border:0; padding:8px 14px; color:var(--ink); background:transparent; cursor:pointer;
-  font-weight:700;
+  appearance:none; border:0; padding:8px 14px; color:var(--ink); background:transparent; cursor:pointer; font-weight:700;
 }
 .seg-btn.active{ background:linear-gradient(180deg,#6aa6ff,#5179ff); color:#fff }
 
-/* ===== 범례 ===== */
+/* ===== 범례 / 읽음 색상 ===== */
 .legend{ display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:13px }
 .dot{ width:12px; height:12px; border-radius:999px; display:inline-block; border:1px solid rgba(255,255,255,.18) }
 .dot.unread{ background:#0e1533 }
 .dot.read{ background:#214423; border-color:#2e6a39 }
-
-/* ===== 읽음/미읽음 색(현황표 버튼) ===== */
 .digit-btn.read{
   background:linear-gradient(180deg,#2a4730,#18331d);
   border-color:#2e6a39;
