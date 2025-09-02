@@ -91,6 +91,23 @@
         <div id="digitGrid" class="digit-grid"></div>
       </div>
 
+      <!-- 음성 인식 UI -->
+      <div class="row" style="align-items:center; gap:8px; margin:8px 0 12px">
+        <button id="micBtn" class="btn" type="button">🎤 음성으로 찾기</button>
+        <span id="asrHint" class="p" style="margin:0">예: “창세기 1장 3절”</span>
+      </div>
+      <div id="asrText" class="p" style="opacity:.8; margin-top:-6px"></div>
+
+      <!-- 자동 진행/정확도 표시 -->
+      <div class="row" style="align-items:center; gap:10px; margin:6px 0 6px">
+        <label class="p" style="margin:0; display:flex; align-items:center; gap:6px">
+          <input id="autoAdvance" type="checkbox" checked />
+          자동 진행(유사도 기준 통과 시 다음 절로)
+        </label>
+        <span class="p" id="matchInfo" style="margin:0; opacity:.85">유사도: -</span>
+        <button id="softAdvanceBtn" class="btn ghost" type="button" title="유사도 중간대에서 수동으로 다음 절">무난 진행</button>
+      </div>
+
       <!-- 본문 -->
       <div id="passageBox" class="card" style="background:#0e1533; border-radius:12px;">
         <div id="passageText" style="white-space:pre-wrap; line-height:1.75"></div>
