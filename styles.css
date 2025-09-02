@@ -49,10 +49,10 @@ input:focus, select:focus{border-color:var(--brand)}
 
 .footer{opacity:.7;font-size:12px;text-align:center;margin:30px 0}
 
-/* ===== 현황표(2줄 숫자 버튼: 십/일의 자리) ===== */
+/* ===== 현황표(정수 3줄: 백/십/일 자리) ===== */
 .digit-grid{
   display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); /* 조금 넉넉하게 */
   gap:10px;
 }
 
@@ -67,8 +67,8 @@ input:focus, select:focus{border-color:var(--brand)}
   cursor:pointer;
   transition:transform .08s ease, box-shadow .2s ease, border-color .2s ease;
   user-select:none;
-  aspect-ratio: 1 / 1; /* 정사각형 */
-  font-variant-numeric: tabular-nums; /* 숫자폭 동일 */
+  aspect-ratio: 1 / 1;                 /* 정사각형 → 항상 동일 크기 */
+  font-variant-numeric: tabular-nums;  /* 숫자폭 동일 */
 }
 
 .digit-btn:hover{
@@ -78,15 +78,16 @@ input:focus, select:focus{border-color:var(--brand)}
 }
 
 .digit-line{
-  flex:1; /* 위/아래 영역 동일 높이 */
+  flex:1; /* 위/중/아래 동일 높이로 3등분 */
   display:flex; align-items:center; justify-content:center;
   font-weight:800;
-  letter-spacing: .5px;
-  font-size: clamp(18px, 3.8vw, 26px);
+  letter-spacing:.5px;
+  font-size: clamp(16px, 3.4vw, 22px); /* 3줄이므로 살짝 줄임 */
   line-height:1;
 }
 
-.digit-line.top{
+.digit-line.mid{
+  border-top:1px solid rgba(255,255,255,.08);
   border-bottom:1px solid rgba(255,255,255,.08);
 }
 
