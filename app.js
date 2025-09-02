@@ -1,5 +1,5 @@
 // =========================
-// app.js — 말씀읽기APP v2 (최종)
+// app.js — 말씀읽기APP v2 (최종, 3줄 숫자 현황표)
 // Firebase Auth + Firestore + 장/절 현황표 + 진행률 저장
 // =========================
 (function () {
@@ -10,7 +10,7 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const on = (el, ev, fn, opts) => el && el.addEventListener(ev, fn, opts);
   const log = (...a) => console.log('[APP]', ...a);
-  const BOUND = new WeakSet(); // 중복 바인딩 방지
+  const BOUND = new WeakSet();
 
   // ---- Firebase 초기화 ----
   try {
@@ -29,51 +29,46 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  // ---- 뷰/엘리먼트 참조 ----
+  // ---- 뷰/엘리먼트 ----
   const views = {
     auth: $('#authView') || $('#view-auth') || $('[data-view="auth"]'),
     app: $('#appView') || $('#view-app') || $('[data-view="app"]'),
   };
   const els = {
-    // 로그인/가입 입력
     email: $('#email') || $('#loginEmail') || $('#signupEmail'),
     password: $('#password') || $('#loginPassword') || $('#signupPassword'),
     signupEmail: $('#signupEmail') || $('#email'),
     signupPassword: $('#signupPassword') || $('#password'),
 
-    // 버튼/폼
     signupBtn: $('#signupBtn') || $('[data-action="signup"]') || $('button[name="signup"]') || $('.btn-signup'),
     loginBtn: $('#loginBtn') || $('[data-action="login"]') || $('button[name="login"]') || $('.btn-login'),
     logoutBtn: $('#logoutBtn') || $('[data-action="logout"]') || $('button[name="logout"]') || $('.btn-logout'),
     signupForm: $('#signupForm') || $('form[data-form="signup"]') || $('form#registerForm'),
     loginForm: $('#loginForm') || $('form[data-form="login"]') || $('form#signinForm'),
 
-    // 앱 영역
     welcome: $('#welcomeText') || $('#welcome') || $('[data-el="welcome"]'),
     userEmail: $('#userEmail') || $('[data-el="userEmail"]'),
 
-    // 말씀 뷰어 & 현황표
     bookSelect: $('#bookSelect'),
     chapterSelect: $('#chapterSelect'),
     passageText: $('#passageText'),
     statusBoard: $('#statusBoard'),
     digitGrid: $('#digitGrid'),
 
-    // 모드 토글
     modeChapter: $('#modeChapter'),
     modeVerse: $('#modeVerse'),
   };
 
-  // ---- 앱 상태 ----
+  // ---- 상태 ----
   const state = {
     mode: 'chapter',           // 'chapter' | 'verse'
-    currentVersesCount: 0,     // 현재 장의 절 수(절 보기용)
-    versesReadSet: new Set(),  // 읽음 절 번호 Set (문자열)
+    currentVersesCount: 0,
+    versesReadSet: new Set(),
     userId: null,
     saving: false,
   };
 
-  // ---- 에러 한글화 ----
+  // ---- 에러 텍스트 ----
   const errorText = (code, msg) => {
     const map = {
       'auth/invalid-email': '이메일 형식이 올바르지 않습니다.',
@@ -93,7 +88,7 @@
     if (view && view.classList) view.classList.remove('hidden');
   }
 
-  // ---- 사용자 문서 생성 ----
+  // ---- 사용자 문서 ----
   async function ensureUserDoc(user) {
     if (!user) return;
     const ref = db.collection('users').doc(user.uid);
@@ -110,7 +105,7 @@
     }
   }
 
-  // ---- 진행도(읽음 절) 저장/로드 ----
+  // ---- 진행도 저장/로드 ----
   function progressDocRef(book, chapter) {
     if (!state.userId) return null;
     return db.collection('users').doc(state.userId)
@@ -149,7 +144,7 @@
     }
   }
 
-  // ---- Firestore에서 책/장/절 불러오기 ----
+  // ---- 성경(책/장) 불러오기 ----
   async function loadBibleBooks() {
     const snap = await db.collection("bible").doc("개역한글").collection("books").get();
     els.bookSelect.innerHTML = "";
@@ -185,9 +180,8 @@
       });
     }
 
-    // 장 모드일 때 장 현황표 갱신
     if (state.mode === 'chapter') {
-      renderStatusBoard(chapterIds.length);
+      renderStatusBoard(chapterIds.length); // 장 개수로 현황표
     }
   }
 
@@ -197,7 +191,6 @@
     const chapter = els.chapterSelect.value;
     if (!book || !chapter) return;
 
-    // 절 데이터 가져오기
     const doc = await db.collection("bible")
       .doc("개역한글")
       .collection("books")
@@ -208,14 +201,11 @@
 
     const verses = doc.data()?.verses || {};
 
-    // 진행도 로드
     await loadProgress(book, chapter);
 
-    // 절 수
     const verseNums = Object.keys(verses).sort((a,b)=>Number(a)-Number(b));
     state.currentVersesCount = verseNums.length;
 
-    // 본문 렌더 (절별 앵커)
     const frag = document.createDocumentFragment();
     verseNums.forEach(n => {
       const line = document.createElement('div');
@@ -228,22 +218,30 @@
     els.passageText.innerHTML = '';
     els.passageText.appendChild(frag);
 
-    // 현황표 갱신
     if (state.mode === 'verse') {
-      renderStatusBoard(state.currentVersesCount);
+      renderStatusBoard(state.currentVersesCount); // 절 개수로 현황표
     }
     syncStatusActive();
   }
 
-  // ---- 현황표(장/절) 렌더 ----
+  // ---- 숫자를 백/십/일 자리로 쪼개는 유틸 (3자리, 앞자리 0채움) ----
+  function splitHTO(n) {
+    const s = String(n).padStart(3, '0'); // 예: 7 → "007"
+    return {
+      h: s[0], // hundreds
+      t: s[1], // tens
+      o: s[2], // ones
+    };
+  }
+
+  // ---- 현황표(장/절) 렌더: 3줄(백/십/일) 숫자 버튼 ----
   function renderStatusBoard(total) {
     if (!els.digitGrid) return;
     els.digitGrid.innerHTML = '';
     const isVerseMode = state.mode === 'verse';
 
     for (let n = 1; n <= total; n++) {
-      const tens = Math.floor(n / 10); // 십의 자리 (0 포함)
-      const ones = n % 10;             // 일의 자리
+      const { h, t, o } = splitHTO(n);
 
       const btn = document.createElement('button');
       btn.className = 'digit-btn';
@@ -253,13 +251,18 @@
 
       const top = document.createElement('div');
       top.className = 'digit-line top';
-      top.textContent = String(tens);
+      top.textContent = h;
+
+      const mid = document.createElement('div');
+      mid.className = 'digit-line mid';
+      mid.textContent = t;
 
       const bottom = document.createElement('div');
       bottom.className = 'digit-line bottom';
-      bottom.textContent = String(ones);
+      bottom.textContent = o;
 
       btn.appendChild(top);
+      btn.appendChild(mid);
       btn.appendChild(bottom);
 
       // 읽음 표시(절 모드)
@@ -274,7 +277,7 @@
 
       btn.addEventListener('click', async () => {
         if (isVerseMode) {
-          // 절 읽음 토글 + 스크롤
+          // 절 읽음 토글 + 해당 절로 스크롤
           const num = String(n);
           if (state.versesReadSet.has(num)) {
             state.versesReadSet.delete(num);
@@ -314,7 +317,6 @@
         btn.classList.toggle('active', btn.getAttribute('data-chapter') === val);
       });
     } else {
-      // 절 모드: 읽음 표시 동기화
       els.digitGrid.querySelectorAll('.digit-btn').forEach(btn => {
         const v = btn.getAttribute('data-verse');
         if (!v) return;
@@ -323,7 +325,7 @@
     }
   }
 
-  // ---- 이벤트 안전 바인딩 ----
+  // ---- 이벤트 바인딩 ----
   function bindSafely(el, ev, fn) {
     if (!el) return;
     if (BOUND.has(el)) return;
@@ -332,38 +334,33 @@
   }
 
   function wireEvents() {
-    // 버튼/폼
     bindSafely(els.signupBtn, 'click', handleSignup);
     bindSafely(els.loginBtn, 'click', handleLogin);
     bindSafely(els.logoutBtn, 'click', handleLogout);
     bindSafely(els.signupForm, 'submit', handleSignup);
     bindSafely(els.loginForm, 'submit', handleLogin);
 
-    // data-action 자동 바인딩(여분 버튼 대응)
     $$('[data-action="signup"]').forEach(btn => bindSafely(btn, 'click', handleSignup));
     $$('[data-action="login"]').forEach(btn => bindSafely(btn, 'click', handleLogin));
     $$('[data-action="logout"]').forEach(btn => bindSafely(btn, 'click', handleLogout));
 
-    // 권 변경 → 장/현황표 갱신 + 본문 렌더
     bindSafely(els.bookSelect, 'change', async () => {
       await fillChapters();
       await renderPassage();
     });
 
-    // 장 변경 → 본문/현황표 동기화
     bindSafely(els.chapterSelect, 'change', async () => {
       await renderPassage();
       syncStatusActive();
     });
 
-    // 장/절 모드 토글
     bindSafely(els.modeChapter, 'click', async () => {
       state.mode = 'chapter';
       els.modeChapter.classList.add('active');
       els.modeChapter.setAttribute('aria-pressed','true');
       els.modeVerse.classList.remove('active');
       els.modeVerse.setAttribute('aria-pressed','false');
-      await fillChapters(); // 장 개수 기준 현황표
+      await fillChapters();
       syncStatusActive();
     });
 
@@ -373,7 +370,7 @@
       els.modeVerse.setAttribute('aria-pressed','true');
       els.modeChapter.classList.remove('active');
       els.modeChapter.setAttribute('aria-pressed','false');
-      await renderPassage(); // 본문 렌더 → 절 수 기준 현황표
+      await renderPassage();
     });
 
     log('이벤트 바인딩 완료');
@@ -385,7 +382,7 @@
     wireEvents();
   }
 
-  // ---- 회원가입/로그인/로그아웃 ----
+  // ---- Auth 액션 ----
   async function handleSignup(e) {
     if (e) e.preventDefault();
     const form = els.signupForm || document;
@@ -429,16 +426,15 @@
   // ---- Auth 상태 변화 ----
   auth.onAuthStateChanged(async (user) => {
     if (user) {
-      state.userId = user.uid; // 사용자 ID 저장
+      state.userId = user.uid;
       await ensureUserDoc(user);
       if (els.userEmail) els.userEmail.textContent = user.email || user.displayName || '(알 수 없음)';
       if (els.welcome) els.welcome.textContent = '샬롬! 말씀읽기를 시작해볼까요?';
       show(views.app || document.body);
 
-      // 초기 로드
-      await loadBibleBooks();   // 책 목록
-      await fillChapters();     // 장 목록 + (장 모드 현황표)
-      await renderPassage();    // 본문 + (절 모드일 경우 절 수 반영)
+      await loadBibleBooks();
+      await fillChapters();
+      await renderPassage();
       syncStatusActive();
     } else {
       state.userId = null;
