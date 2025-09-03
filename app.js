@@ -179,7 +179,7 @@
   async function ensureUserDoc(u, opts={}) {
     if (!db || !u) return;
     const data = {
-      email: u.email || ",
+      email: u.email || "",
       versesRead: firebase.firestore.FieldValue.increment(0),
       chaptersRead: firebase.firestore.FieldValue.increment(0),
       last: state.myStats.last || null,
