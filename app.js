@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(강화) + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(모드: 빠름/보통/느긋함) + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -39,8 +39,8 @@
     // 로그인 폼
     email: document.getElementById("email"),
     password: document.getElementById("password"),
-    displayName: document.getElementById("displayName"), // 선택(Auth만)
-    nickname: document.getElementById("nickname"),       // 선택(Firestore)
+    displayName: document.getElementById("displayName"),
+    nickname: document.getElementById("nickname"),
     btnLogin: document.getElementById("btnLogin"),
     btnSignup: document.getElementById("btnSignup"),
 
@@ -124,15 +124,15 @@
   els.btnSignup?.addEventListener("click", () => withBusy(els.btnSignup, async () => {
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
-    const name  = (els.displayName.value || "").trim(); // 선택 입력
-    const nick  = (els.nickname?.value || "").trim();   // 선택 입력
+    const name  = (els.displayName.value || "").trim();
+    const nick  = (els.nickname?.value || "").trim();
     if (!email || !pw) { alert("이메일/비밀번호를 입력하세요."); return; }
 
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, pw);
       user = cred.user;
-      if (name) { await user.updateProfile({ displayName: name }); } // Auth 프로필만 갱신
-      await safeEnsureUserDoc(user, { nickname: nick });             // 닉네임은 Firestore에
+      if (name) { await user.updateProfile({ displayName: name }); }
+      await safeEnsureUserDoc(user, { nickname: nick });
     } catch (e) {
       console.error(e);
       alert("회원가입 실패: " + mapAuthError(e));
@@ -142,15 +142,15 @@
   els.btnLogin?.addEventListener("click", () => withBusy(els.btnLogin, async () => {
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
-    const name  = (els.displayName.value || "").trim(); // 선택 입력
-    const nick  = (els.nickname?.value || "").trim();   // 선택 입력
+    const name  = (els.displayName.value || "").trim();
+    const nick  = (els.nickname?.value || "").trim();
     if (!email || !pw) { alert("이메일/비밀번호를 입력하세요."); return; }
 
     try {
       const cred = await auth.signInWithEmailAndPassword(email, pw);
       user = cred.user;
-      if (name) { await user.updateProfile({ displayName: name }); } // Auth 프로필만 갱신
-      await safeEnsureUserDoc(user, { nickname: nick });             // 닉네임은 Firestore에
+      if (name) { await user.updateProfile({ displayName: name }); }
+      await safeEnsureUserDoc(user, { nickname: nick });
     } catch (e) {
       console.error(e);
       alert("로그인 실패: " + mapAuthError(e));
@@ -185,10 +185,7 @@
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     };
-    // 닉네임 입력 시에만 병합 저장
-    if (opts.nickname && opts.nickname.trim()) {
-      data.nickname = opts.nickname.trim();
-    }
+    if (opts.nickname && opts.nickname.trim()) data.nickname = opts.nickname.trim();
     await db.collection("users").doc(u.uid).set(data, { merge: true });
   }
 
@@ -366,7 +363,7 @@
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
-  // ---------- Speech Recognition (강화 버전) ----------
+  // ---------- Speech Recognition (모드 지원: fast/normal/lenient) ----------
   const getRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
@@ -374,115 +371,186 @@
     r.lang = 'ko-KR';
     r.continuous = true;
     r.interimResults = true;
-    // 후보 활용
     try { r.maxAlternatives = 3; } catch(_) {}
     return r;
   };
 
-  // 정규화
-  function normalizeText(s) {
-    return (s || "")
-      .normalize("NFKC")
-      .replace(/[“”‘’"'\u200B-\u200D`´^~]/g, "")
-      .replace(/[^\p{L}\p{N} ]/gu, " ")
-      .replace(/\s+/g, " ")
-      .trim()
+  // 프로파일 모음
+  const RECOG_PROFILES = {
+    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:200, cooldownMs:250, postAdvanceDelayMs:200 },
+    normal: { shortLen:30, mediumLen:60, minRatioShort:0.88, minRatioMedium:0.86, minRatioLong:0.84, holdMs:300, cooldownMs:300, postAdvanceDelayMs:400 },
+    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.80, holdMs:500, cooldownMs:450, postAdvanceDelayMs:600 }
+  };
+  let MATCH_PROFILE = RECOG_PROFILES.normal;
+
+  // 모드 라디오 → 프로파일 변경
+  document.querySelectorAll("input[name=recogMode]")?.forEach(radio=>{
+    radio.addEventListener("change", ()=>{
+      const val = document.querySelector("input[name=recogMode]:checked")?.value || "normal";
+      MATCH_PROFILE = RECOG_PROFILES[val] || RECOG_PROFILES.normal;
+      console.log("[RecogMode] 변경:", val, MATCH_PROFILE);
+    });
+  });
+
+  // 자모 분해 테이블
+  const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+  const JUNG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
+  const JONG = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+  const S_BASE=0xAC00, L_COUNT=19, V_COUNT=21, T_COUNT=28, N_COUNT=V_COUNT*T_COUNT, S_COUNT=L_COUNT*N_COUNT;
+
+  function decomposeJamo(s){
+    const out=[];
+    for (const ch of (s||"")){
+      const code = ch.codePointAt(0);
+      const sIndex = code - S_BASE;
+      if (sIndex>=0 && sIndex<S_COUNT){
+        const L = Math.floor(sIndex/N_COUNT);
+        const V = Math.floor((sIndex%N_COUNT)/T_COUNT);
+        const T = sIndex%T_COUNT;
+        out.push(CHO[L], JUNG[V]);
+        if (T) out.push(JONG[T]);
+      } else out.push(ch);
+    }
+    return out.join("");
+  }
+
+  // 숫자 간략 정규화(1~99)
+  const NUM_KO = {"영":0,"공":0,"하나":1,"한":1,"둘":2,"두":2,"셋":3,"세":3,"넷":4,"네":4,"다섯":5,"여섯":6,"일곱":7,"여덟":8,"아홉":9,"열":10};
+  function normalizeKoreanNumbers(s){
+    return s
+      .replace(/(열|한\s*십|일\s*십)/g,"십")
+      .replace(/(한|일)\s*십/g,"십")
+      .replace(/(둘|이)\s*십/g,"이십")
+      .replace(/(셋|삼)\s*십/g,"삼십")
+      .replace(/(넷|사)\s*십/g,"사십")
+      .replace(/(다섯|오)\s*십/g,"오십")
+      .replace(/(여섯|육)\s*십/g,"육십")
+      .replace(/(일곱|칠)\s*십/g,"칠십")
+      .replace(/(여덟|팔)\s*십/g,"팔십")
+      .replace(/(아홉|구)\s*십/g,"구십")
+      .replace(/십\s*(한|일)/g,"11").replace(/십\s*(둘|이)/g,"12")
+      .replace(/십\s*(셋|삼)/g,"13").replace(/십\s*(넷|사)/g,"14")
+      .replace(/십\s*(다섯|오)/g,"15").replace(/십\s*(여섯|육)/g,"16")
+      .replace(/십\s*(일곱|칠)/g,"17").replace(/십\s*(여덟|팔)/g,"18")
+      .replace(/십\s*(아홉|구)/g,"19")
+      .replace(/^\s*십\s*$/g,"10")
+      .replace(/(이|둘)\s*십\s*(\d{1})?/g,(_,__,y)=>"2"+(y?y:"0"))
+      .replace(/(삼|셋)\s*십\s*(\d{1})?/g,(_,__,y)=>"3"+(y?y:"0"))
+      .replace(/(사|넷)\s*십\s*(\d{1})?/g,(_,__,y)=>"4"+(y?y:"0"))
+      .replace(/(오|다섯)\s*십\s*(\d{1})?/g,(_,__,y)=>"5"+(y?y:"0"))
+      .replace(/(육|여섯)\s*십\s*(\d{1})?/g,(_,__,y)=>"6"+(y?y:"0"))
+      .replace(/(칠|일곱)\s*십\s*(\d{1})?/g,(_,__,y)=>"7"+(y?y:"0"))
+      .replace(/(팔|여덟)\s*십\s*(\d{1})?/g,(_,__,y)=>"8"+(y?y:"0"))
+      .replace(/(구|아홉)\s*십\s*(\d{1})?/g,(_,__,y)=>"9"+(y?y:"0"))
+      .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
+  }
+
+  // 조사/불용어(경량) + 발음 보정(의≈에)
+  const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
+  const pronunciationHeuristics = s => s.replace(/의/g,"에");
+
+  // 공통 정규화 → 자모열
+  function normalizeToJamo(s, forSpoken=false){
+    let t = (s||"").normalize("NFKC")
+      .replace(/[“”‘’"'\u200B-\u200D`´^~]/g,"")
       .toLowerCase();
+    t = normalizeKoreanNumbers(t);
+    t = t.replace(STOPWORDS," ");
+    if (forSpoken) t = pronunciationHeuristics(t);
+    t = t.replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim();
+    t = decomposeJamo(t).replace(/\s+/g,"");
+    return t;
   }
 
-  // grapheme 분해
-  const seg = (typeof Intl !== "undefined" && Intl.Segmenter)
-    ? new Intl.Segmenter("ko", { granularity: "grapheme" })
-    : null;
-
-  function toGraphemes(s) {
-    if (!s) return [];
-    if (!seg) return Array.from(s);
-    const out = [];
-    for (const g of seg.segment(s)) out.push(g.segment);
-    return out;
-  }
-
-  // 앞에서부터 맞춘 길이(서브시퀀스 기반)
-  function matchedPrefixLenBySubseq(target, spoken) {
-    const t = toGraphemes(normalizeText(target).replace(/ /g, ""));
-    const s = toGraphemes(normalizeText(spoken).replace(/ /g, ""));
-    if (!t.length || !s.length) return 0;
-    let ti = 0, si = 0;
-    while (ti < t.length && si < s.length) {
-      if (t[ti] === s[si]) { ti++; si++; }
+  // 서브시퀀스 기반 prefix 길이(자모)
+  function matchedPrefixLenJamo(targetJamo, spokenJamo){
+    if (!targetJamo || !spokenJamo) return 0;
+    let ti=0, si=0;
+    while (ti<targetJamo.length && si<spokenJamo.length){
+      if (targetJamo[ti]===spokenJamo[si]) { ti++; si++; }
       else { si++; }
     }
     return ti;
   }
 
-  function paintRead(prefixLen) {
+  function paintRead(prefixLen){
     if (!els.verseText) return;
     const spans = els.verseText.childNodes;
-    for (let i = 0; i < spans.length; i++) {
-      spans[i].classList?.toggle("read", i < prefixLen);
+    for (let i=0;i<spans.length;i++){
+      spans[i].classList?.toggle("read", i<prefixLen);
     }
   }
 
-  let lastStablePrefix = 0;
+  // 안정창/쿨다운/상태
+  let stableSince = 0;
   let lastCompleteTs = 0;
+  let lastPrefix = 0;
 
-  function bestTranscriptFromEvent(evt) {
-    const cand = [];
-    for (let i = 0; i < evt.results.length; i++) {
-      const res = evt.results[i];
-      const maxAlt = Math.min(res.length, 3);
-      for (let a = 0; a < maxAlt; a++) cand.push(res[a].transcript);
+  function bestTranscripts(evt){
+    const cand=[];
+    for (let i=0;i<evt.results.length;i++){
+      const res=evt.results[i];
+      const maxAlt=Math.min(res.length,3);
+      for (let a=0;a<maxAlt;a++) cand.push(res[a].transcript);
     }
-    cand.sort((a, b) => b.length - a.length);
-    return cand.slice(0, 3);
+    cand.sort((a,b)=>b.length-a.length);
+    return cand.slice(0,3);
   }
 
-  function onSpeechResult(evt) {
+  function onSpeechResult(evt){
     const v = state.verses[state.currentVerseIdx] || "";
     if (!v) return;
 
-    const candidates = bestTranscriptFromEvent(evt);
-    let bestPrefix = 0;
-    for (const tr of candidates) {
-      const pref = matchedPrefixLenBySubseq(v, tr);
-      if (pref > bestPrefix) bestPrefix = pref;
+    const targetJ = normalizeToJamo(v, false);
+    const L = targetJ.length;
+    const minRatio =
+      (L <= MATCH_PROFILE.shortLen)  ? MATCH_PROFILE.minRatioShort  :
+      (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
+                                       MATCH_PROFILE.minRatioLong;
+
+    let bestPref = 0;
+    for (const tr of bestTranscripts(evt)){
+      const spokenJ = normalizeToJamo(tr, true);
+      const pref = matchedPrefixLenJamo(targetJ, spokenJ);
+      if (pref > bestPref) bestPref = pref;
     }
 
-    paintRead(bestPrefix);
-    lastStablePrefix = Math.max(lastStablePrefix, bestPrefix);
+    paintRead(bestPref);
 
-    const targetLen = toGraphemes(normalizeText(v).replace(/ /g, "")).length;
-    const ratio = targetLen ? (bestPrefix / targetLen) : 0;
-
-    // 완료 기준(절 길이에 따라 가변)
-    const minRatio = targetLen <= 25 ? 0.92 : 0.88;
+    const ratio = L ? bestPref / L : 0;
     const now = Date.now();
-    const allowComplete = (now - lastCompleteTs) > 300;
-    const isFinal = evt.results[evt.results.length - 1]?.isFinal;
-    const needFinalForShort = targetLen <= 18;
+    if (bestPref > lastPrefix){ stableSince = now; lastPrefix = bestPref; }
 
-    if (ratio >= minRatio && allowComplete) {
-      if (!needFinalForShort || isFinal) {
+    const holdOk = (now - stableSince) >= MATCH_PROFILE.holdMs;
+    const coolOk = (now - lastCompleteTs) >= MATCH_PROFILE.cooldownMs;
+    const isFinal = evt.results[evt.results.length - 1]?.isFinal;
+    const needFinalForShort = L <= MATCH_PROFILE.shortLen;
+
+    if (ratio >= minRatio && holdOk && coolOk){
+      if (!needFinalForShort || isFinal){
         lastCompleteTs = now;
-        completeVerse();
+        completeVerseWithProfile();
       }
     }
   }
 
-  async function completeVerse() {
+  async function completeVerseWithProfile(){
     stopListening(false);
     await incVersesRead(1);
+
+    // 완료 후 잠깐 숨고르기
+    await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
+
     const b = getBookByKo(state.currentBookKo);
     const auto = els.autoAdvance ? els.autoAdvance.checked : true;
 
-    if (auto) {
-      if (state.currentVerseIdx < state.verses.length - 1) {
+    if (auto){
+      if (state.currentVerseIdx < state.verses.length - 1){
         state.currentVerseIdx++;
         state.myStats.last.verse = state.currentVerseIdx + 1;
         saveLastPosition();
         updateVerseText();
-        lastStablePrefix = 0;
+        stableSince = 0; lastPrefix = 0;
         startListening(false);
       } else {
         await markChapterDone(b.id, state.currentChapter);
@@ -494,72 +562,41 @@
     }
   }
 
-  function startListening(showAlert = true) {
+  function startListening(showAlert=true){
     if (state.listening) return;
     state.recog = getRecognition();
-    if (!state.recog) {
-      els.listenHint && (els.listenHint.innerHTML = "⚠️ 음성인식 미지원(데스크톱 Chrome 권장)");
+    if (!state.recog){
+      els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(데스크톱 Chrome 권장)");
       if (showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다.");
       return;
     }
-    lastStablePrefix = 0;
+    stableSince=0; lastPrefix=0;
     state.recog.onresult = onSpeechResult;
-    state.recog.onend = () => {
-      if (state.listening) {
-        try { state.recog.start(); } catch (_) {}
-      }
-    };
+    state.recog.onend = () => { if (state.listening) { try{ state.recog.start(); }catch(_){} } };
     try {
       state.recog.start();
       state.listening = true;
-      els.btnToggleMic && (els.btnToggleMic.textContent = "⏹️");
-    } catch (e) {
+      els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
+    } catch(e){
       alert("음성인식 시작 실패: " + e.message);
     }
   }
 
-  function stopListening(resetBtn = true) {
-    if (state.recog) {
-      try {
-        state.recog.onresult = null;
-        state.recog.onend = null;
-        state.recog.stop();
-      } catch (_) {}
+  function stopListening(resetBtn=true){
+    if (state.recog){
+      try{ state.recog.onresult=null; state.recog.onend=null; state.recog.stop(); }catch(_){}
     }
-    state.listening = false;
-    if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent = "🎙️";
+    state.listening=false;
+    if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
   }
 
-  els.btnToggleMic?.addEventListener("click", () => {
-    if (!state.listening) startListening();
-    else stopListening();
-  });
-  els.btnNextVerse?.addEventListener("click", () => {
-    if (!state.verses.length) return;
-    stopListening(false);
-    if (state.currentVerseIdx < state.verses.length - 1) {
-      state.currentVerseIdx++;
-      state.myStats.last.verse = state.currentVerseIdx + 1;
-      saveLastPosition();
-      updateVerseText();
-      lastStablePrefix = 0;
-      startListening(false);
-    }
-  });
-  els.btnPrevVerse?.addEventListener("click", () => {
-    if (!state.verses.length) return;
-    stopListening(false);
-    if (state.currentVerseIdx > 0) {
-      state.currentVerseIdx--;
-      state.myStats.last.verse = state.currentVerseIdx + 1;
-      saveLastPosition();
-      updateVerseText();
-      lastStablePrefix = 0;
-      startListening(false);
-    }
-  });
+  els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
+  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false);
+    if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; startListening(false);} });
+  els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false);
+    if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; startListening(false);} });
 
-  // ---------- Leaderboard (닉네임 > 이메일앞부분) ----------
+  // ---------- Leaderboard ----------
   async function loadLeaderboard() {
     if (!db || !els.leaderList) return;
     let qs; try { qs = await db.collection("users").orderBy("versesRead","desc").limit(20).get(); } catch (e) { return; }
