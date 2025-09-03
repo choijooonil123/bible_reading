@@ -1,536 +1,408 @@
 // =========================
-// app.js — 말씀읽기APP v2 (최종)
-// Firebase Auth + Firestore + 3줄 숫자 현황표(백/십/일) + 절/장 토글
-// 읽음 진행률 저장 + 음성인식 + 본문 매칭(유사도 기반 자동·무난 진행)
+// app.js — 이전 레이아웃 회귀 + 어절(단어) 단위 자동 진행 강화
+// Firebase Auth + Firestore + 동그란 장 버튼 + 절수 + 본문 + 순위
+// 진행도 저장(절 기준) 유지, 자동 진행은 '어절' 기준으로 세밀화
 // =========================
 (function () {
   'use strict';
 
-  // ---------- 유틸 ----------
-  const $ = (sel, root=document) => root.querySelector(sel);
-  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-  const on = (el, ev, fn, opts) => el && el.addEventListener(ev, fn, opts);
-  const log = (...a) => console.log('[APP]', ...a);
-  const BOUND = new WeakSet();
+  // ===== 설정 =====
+  const VERSION_ID = '개역한글'; // ← Firestore bible/{여기}/books/... 실제 문서명으로 변경하세요.
 
-  // ✅ [추가] 성경 버전 문서 ID 한 곳에서 관리 (필수 최소 수정)
-  const VERSION_ID = '개역한글'; // Firestore: bible/{여기}/books/...
+  // ===== 유틸 =====
+  const $ = (s, r=document)=>r.querySelector(s);
+  const $$= (s, r=document)=>Array.from(r.querySelectorAll(s));
+  const on= (el,ev,fn,op)=>el&&el.addEventListener(ev,fn,op);
+  const log=(...a)=>console.log('[APP]',...a);
+  const BOUND=new WeakSet();
 
-  // (선택) 아주 얇은 안전 가드: 비어있을 때 사용자에게 보이는 한 줄 안내에만 사용
-  const EMPTY_LABEL_BOOKS = '책 데이터가 없습니다 (bible/'+VERSION_ID+'/books 확인)';
-  const EMPTY_LABEL_CHAPS = '장 데이터가 없습니다';
+  // ===== Firebase =====
+  try{
+    const cfg=(window.firebaseConfig||window.FIREBASE_CONFIG||window.firebase_config)||firebaseConfig||null;
+    if(!firebase.apps.length) firebase.initializeApp(cfg||{});
+  }catch(e){ console.error('Firebase init 오류:',e); }
+  const auth=firebase.auth(), db=firebase.firestore();
 
-  // ---------- Firebase 초기화 ----------
-  try {
-    const cfg = (window && (window.firebaseConfig || window.FIREBASE_CONFIG || window.firebase_config)) || (typeof firebaseConfig !== 'undefined' ? firebaseConfig : null);
-    if (!cfg) console.warn('firebaseConfig가 감지되지 않았습니다. firebaseConfig.js 로딩 순서를 확인하세요.');
-    if (!firebase.apps.length) { firebase.initializeApp(cfg || {}); log('Firebase initialized'); }
-    else { log('Firebase already initialized'); }
-  } catch (err) { console.error('Firebase 초기화 오류:', err); }
+  // ===== 요소 =====
+  const views={ auth:$('#authView'), app:$('#appView') };
+  const els={
+    signupForm:$('#signupForm'), loginForm:$('#loginForm'),
+    signupEmail:$('#signupEmail'), signupPassword:$('#signupPassword'),
+    loginEmail:$('#loginEmail'), loginPassword:$('#loginPassword'),
+    signupBtn:$('#signupBtn'), loginBtn:$('#loginBtn'), logoutBtn:$('#logoutBtn'),
+    userEmail:$('#userEmail'), welcome:$('#welcomeText'),
 
-  const auth = firebase.auth();
-  const db   = firebase.firestore();
+    bookSelect:$('#bookSelect'),
+    chapterCircles:$('#chapterCircles'),
+    verseInfo:$('#verseInfo'),
+    passageText:$('#passageText'),
 
-  // ---------- 요소 ----------
-  const views = {
-    auth: $('#authView') || $('[data-view="auth"]'),
-    app:  $('#appView')  || $('[data-view="app"]'),
-  };
-  const els = {
-    // 인증
-    email: $('#email') || $('#loginEmail') || $('#signupEmail'),
-    password: $('#password') || $('#loginPassword') || $('#signupPassword'),
-    signupEmail: $('#signupEmail') || $('#email'),
-    signupPassword: $('#signupPassword') || $('#password'),
-    signupBtn: $('#signupBtn') || $('[data-action="signup"]'),
-    loginBtn:  $('#loginBtn')  || $('[data-action="login"]'),
-    logoutBtn: $('#logoutBtn') || $('[data-action="logout"]'),
-    signupForm: $('#signupForm') || $('form[data-form="signup"]'),
-    loginForm:  $('#loginForm')  || $('form[data-form="login"]'),
-    userEmail: $('#userEmail'),
-    welcome:   $('#welcomeText'),
-
-    // 뷰어
-    bookSelect: $('#bookSelect'),
-    chapterSelect: $('#chapterSelect'),
-    passageText: $('#passageText'),
-    statusBoard: $('#statusBoard'),
-    digitGrid: $('#digitGrid'),
-
-    // 모드
-    modeChapter: $('#modeChapter'),
-    modeVerse:   $('#modeVerse'),
-
-    // 음성/매칭
-    micBtn: $('#micBtn'),
-    asrText: $('#asrText'),
-    autoAdv: $('#autoAdvance'),
-    matchInfo: $('#matchInfo'),
-    softAdv: $('#softAdvanceBtn'),
+    micBtn:$('#micBtn'), asrText:$('#asrText'),
+    autoAdv:$('#autoAdvance'), matchInfo:$('#matchInfo'), softAdv:$('#softAdvanceBtn'),
+    rankList:$('#rankList'),
   };
 
-  // ---------- 상태 ----------
-  const state = {
-    mode: 'chapter',              // 'chapter' | 'verse'
-    currentVersesCount: 0,
-    versesReadSet: new Set(),     // 현재 장의 읽은 절
-    userId: null,
-    saving: false,
-    currentVersePtr: 1,           // 자동 진행 기준 포인터(절번호)
-    match: {                      // 매칭 기준
-      PASS: 0.78,                 // 자동 진행
-      SOFT: 0.65,                 // 무난 진행 버튼 권장
-      windowBack: 0,              // 현재절에서 뒤로 허용
-      windowFwd: 2,               // 앞으로 허용
+  // ===== 상태 =====
+  const state={
+    userId:null,
+    book:null, chapter:null,
+    verses:{},                         // { "1": "태초에 ..." }
+    verseTokens: new Map(),            // verse -> [tokens] (어절 배열)
+    currentVerse:1,
+    currentWord:0,                     // 어절 포인터(0-based)
+    versesReadSet:new Set(),           // 절 단위 진행 저장(기존 유지)
+    // 어절 단위 매칭 파라미터
+    match:{
+      PASS:0.78,     // 자동 어절 진행
+      SOFT:0.64,     // 무난 진행 버튼 허용
+      WIN_MIN:3,     // 어절 윈도 최소
+      WIN_MAX:6,     // 어절 윈도 최대
+      LOOKAHEAD_VERSE:0 // 현재 절만 비교(원하면 1로 늘려 인접 절 포함)
     }
   };
 
-  // ---------- 에러 문구 ----------
-  const errorText = (code, msg) => ({
-    'auth/invalid-email':'이메일 형식이 올바르지 않습니다.',
-    'auth/email-already-in-use':'이미 가입된 이메일입니다.',
-    'auth/weak-password':'비밀번호가 너무 약합니다(최소 6자 이상 권장).',
-    'auth/user-not-found':'가입된 사용자가 없습니다.',
-    'auth/wrong-password':'비밀번호가 올바르지 않습니다.',
-    'auth/too-many-requests':'요청이 너무 많습니다. 잠시 후 다시 시도하세요.',
-  }[code] || (msg || '알 수 없는 오류가 발생했습니다.'));
-
-  // ---------- UI 토글 ----------
-  function show(view){
-    if (views.auth) views.auth.classList.add('hidden');
-    if (views.app)  views.app.classList.add('hidden');
-    if (view && view.classList) view.classList.remove('hidden');
+  // ===== 진행도 저장/로드(절 기준 기존 유지) =====
+  function progressDocRef(book,chapter){ if(!state.userId) return null; return db.collection('users').doc(state.userId).collection('progress').doc(`${book}-${chapter}`); }
+  async function loadProgress(book,chapter){
+    state.versesReadSet=new Set();
+    const ref=progressDocRef(book,chapter); if(!ref) return;
+    const s=await ref.get(); const d=s.data();
+    if(d?.readVerses) d.readVerses.forEach(v=>state.versesReadSet.add(String(v)));
+  }
+  let _saveTimer=null;
+  function saveProgressDebounced(book,chapter){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>saveProgress(book,chapter),400); }
+  async function saveProgress(book,chapter){
+    const ref=progressDocRef(book,chapter); if(!ref) return;
+    const arr=Array.from(state.versesReadSet).sort((a,b)=>Number(a)-Number(b));
+    await ref.set({readVerses:arr,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
   }
 
-  // ---------- 사용자 문서 ----------
-  async function ensureUserDoc(user){
-    if (!user) return;
-    const ref = db.collection('users').doc(user.uid);
-    const snap = await ref.get();
-    if (!snap.exists){
-      await ref.set({
-        uid:user.uid, email:user.email||null,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        displayName:user.displayName||null,
-        provider:(user.providerData?.[0]?.providerId)||'password',
-      });
-      log('사용자 문서 생성');
-    }
-  }
-
-  // ---------- 진행도 저장/로드 ----------
-  function progressDocRef(book, chapter){
-    if (!state.userId) return null;
-    return db.collection('users').doc(state.userId)
-             .collection('progress').doc(`${book}-${chapter}`);
-  }
-  async function loadProgress(book, chapter){
-    state.versesReadSet = new Set();
-    const ref = progressDocRef(book, chapter); if (!ref) return;
-    const snap = await ref.get(); const data = snap.data();
-    if (data?.readVerses) data.readVerses.forEach(v => state.versesReadSet.add(String(v)));
-  }
-  let _saveTimer = null;
-  function saveProgressDebounced(book, chapter){
-    clearTimeout(_saveTimer); _saveTimer = setTimeout(()=>saveProgress(book, chapter), 400);
-  }
-  async function saveProgress(book, chapter){
-    const ref = progressDocRef(book, chapter); if (!ref) return;
-    const arr = Array.from(state.versesReadSet).sort((a,b)=>Number(a)-Number(b));
-    state.saving = true;
+  // ===== 로딩 =====
+  async function loadBooks(){
     try{
-      await ref.set({ readVerses:arr, updatedAt:firebase.firestore.FieldValue.serverTimestamp() }, {merge:true});
-    } finally { state.saving = false; }
-  }
-
-  // ---------- 성경 불러오기 ----------
-  // ✅ [수정] '개역한글' → VERSION_ID 로만 변경 + 아주 얇은 빈 결과 안내
-  async function loadBibleBooks(){
-    try {
-      const snap = await db.collection('bible').doc(VERSION_ID).collection('books').get();
-      els.bookSelect.innerHTML = '';
-      if (snap.empty) {
-        const opt = document.createElement('option');
-        opt.value = ''; opt.textContent = EMPTY_LABEL_BOOKS;
-        els.bookSelect.appendChild(opt);
-        return;
+      const snap=await db.collection('bible').doc(VERSION_ID).collection('books').get();
+      els.bookSelect.innerHTML='';
+      if(snap.empty){
+        const o=document.createElement('option'); o.value=''; o.textContent=`책 데이터가 없습니다(bible/${VERSION_ID}/books)`;
+        els.bookSelect.appendChild(o); return;
       }
-      snap.forEach(doc=>{
-        const opt = document.createElement('option'); opt.value = doc.id; opt.textContent = doc.id;
-        els.bookSelect.appendChild(opt);
-      });
-      await fillChapters();
-    } catch (e) {
-      console.error('loadBibleBooks 오류:', e);
-      els.bookSelect.innerHTML = '';
-      const opt = document.createElement('option');
-      opt.value = ''; opt.textContent = '불러오기 오류 (콘솔 확인)';
-      els.bookSelect.appendChild(opt);
+      snap.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=d.id; els.bookSelect.appendChild(o); });
+    }catch(e){
+      console.error('loadBooks 오류:',e);
+      const o=document.createElement('option'); o.value=''; o.textContent='불러오기 오류'; els.bookSelect.appendChild(o);
     }
   }
-
-  // ✅ [수정] '개역한글' → VERSION_ID 로만 변경 + 빈 결과 한 줄 안내
-  async function fillChapters(){
-    const book = els.bookSelect?.value; if (!book) return;
-    try {
-      const snap = await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').get();
-      const chapterIds = snap.docs.map(d=>d.id).sort((a,b)=>Number(a)-Number(b));
-      if (els.chapterSelect){
-        els.chapterSelect.innerHTML = '';
-        if (chapterIds.length === 0) {
-          const opt = document.createElement('option'); opt.value = ''; opt.textContent = EMPTY_LABEL_CHAPS;
-          els.chapterSelect.appendChild(opt);
-          renderStatusBoard(0);
-          return;
-        }
-        chapterIds.forEach(id=>{
-          const opt = document.createElement('option'); opt.value = id; opt.textContent = `${id}장`;
-          els.chapterSelect.appendChild(opt);
+  async function loadChapters(book){
+    state.book=book;
+    els.chapterCircles.innerHTML='';
+    try{
+      const snap=await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').get();
+      const ids=snap.docs.map(d=>d.id).sort((a,b)=>Number(a)-Number(b));
+      ids.forEach(id=>{
+        const b=document.createElement('button');
+        b.type='button'; b.className='circle-btn'; b.textContent=id;
+        if(id===state.chapter) b.classList.add('active');
+        b.addEventListener('click', async ()=>{
+          state.chapter=id;
+          els.chapterCircles.querySelectorAll('.circle-btn.active').forEach(x=>x.classList.remove('active'));
+          b.classList.add('active');
+          await loadPassage(book, id);
         });
-      }
-      if (state.mode==='chapter') renderStatusBoard(chapterIds.length);
-    } catch (e) {
-      console.error('fillChapters 오류:', e);
-      if (els.chapterSelect){
-        els.chapterSelect.innerHTML = '';
-        const opt = document.createElement('option'); opt.value = ''; opt.textContent = '장 불러오기 오류';
-        els.chapterSelect.appendChild(opt);
-      }
-      renderStatusBoard(0);
-    }
+        els.chapterCircles.appendChild(b);
+      });
+    }catch(e){ console.error('loadChapters 오류:',e); }
   }
 
-  // ✅ [수정] 본문 조회 경로의 '개역한글' → VERSION_ID 만 변경 (기능 동일)
-  async function renderPassage(){
-    if (!els.bookSelect || !els.chapterSelect || !els.passageText) return;
-    const book = els.bookSelect.value, chapter = els.chapterSelect.value; if (!book || !chapter) return;
-
-    const doc = await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').doc(chapter).get();
-    const verses = doc.data()?.verses || {};
-
+  async function loadPassage(book, chapter){
+    state.book=book; state.chapter=chapter;
+    // 본문
+    const doc=await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').doc(chapter).get();
+    state.verses = doc.data()?.verses || {};
     await loadProgress(book, chapter);
 
-    const verseNums = Object.keys(verses).sort((a,b)=>Number(a)-Number(b));
-    state.currentVersesCount = verseNums.length;
+    // 절수 표시
+    const count=Object.keys(state.verses).length;
+    els.verseInfo.textContent = count ? `${count}절` : '0절';
 
-    const frag = document.createDocumentFragment();
-    verseNums.forEach(n=>{
-      const line = document.createElement('div');
-      line.id = `v-${n}`; line.style.padding = '6px 0'; line.style.scrollMarginTop = '96px';
-      line.innerText = `${n}. ${verses[n]}`;
+    // 토큰화(어절)
+    buildVerseTokens();
+
+    // 본문 렌더(어절 span으로 감싸서 하이라이트 가능)
+    renderPassage();
+
+    // 포인터 리셋
+    state.currentVerse = 1;
+    state.currentWord  = 0;
+    highlightPointer();
+
+    // 순위 초기화
+    renderRank([]);
+  }
+
+  // ===== 본문 토큰화/렌더/하이라이트 =====
+  function normalizeKR(s){
+    return s.replace(/[“”"‘’'`]/g,'')
+            .replace(/\s+/g,' ')
+            .trim();
+  }
+  function buildVerseTokens(){
+    state.verseTokens.clear();
+    const keys=Object.keys(state.verses).sort((a,b)=>Number(a)-Number(b));
+    for(const k of keys){
+      const txt = normalizeKR(state.verses[k]||'');
+      // 공백 기준 간단 어절 분리 (필요 시 형태소/어절 라이브러리로 교체 가능)
+      const tokens = txt.length ? txt.split(' ') : [];
+      state.verseTokens.set(Number(k), tokens);
+    }
+  }
+
+  function renderPassage(){
+    els.passageText.innerHTML='';
+    const keys=Object.keys(state.verses).sort((a,b)=>Number(a)-Number(b));
+    const frag=document.createDocumentFragment();
+    for(const k of keys){
+      const line=document.createElement('div');
+      line.className='verse-line'; line.id=`v-${k}`;
+      const num = document.createElement('span');
+      num.style.opacity='.7'; num.style.marginRight='6px';
+      num.textContent = `${k}.`;
+      line.appendChild(num);
+
+      const tokens = state.verseTokens.get(Number(k))||[];
+      tokens.forEach((w,idx)=>{
+        const sp=document.createElement('span');
+        sp.className='word';
+        sp.id = `w-${k}-${idx}`;
+        sp.textContent = w + (idx<tokens.length-1?' ':'');
+        line.appendChild(sp);
+      });
+
       frag.appendChild(line);
-    });
-    els.passageText.innerHTML = ''; els.passageText.appendChild(frag);
-
-    // 포인터 리셋(장 이동 시 1절로)
-    state.currentVersePtr = verseNums.length ? Number(verseNums[0]) : 1;
-
-    if (state.mode==='verse') renderStatusBoard(state.currentVersesCount);
-    syncStatusActive();
-  }
-
-  // ---------- 현황표(3줄 숫자: 백/십/일) ----------
-  function splitHTO(n){
-    const s = String(n).padStart(3,'0');
-    return { h:s[0], t:s[1], o:s[2] };
-  }
-  function renderStatusBoard(total){
-    if (!els.digitGrid) return;
-    els.digitGrid.innerHTML = '';
-    const isVerseMode = state.mode==='verse';
-
-    for (let n=1; n<=total; n++){
-      const {h,t,o} = splitHTO(n);
-      const btn = document.createElement('button');
-      btn.className = 'digit-btn'; btn.type='button';
-      btn.setAttribute(isVerseMode ? 'data-verse':'data-chapter', String(n));
-      btn.setAttribute('aria-label', isVerseMode ? `${n}절 바로가기` : `${n}장 바로가기`);
-
-      const top=document.createElement('div'); top.className='digit-line top'; top.textContent=h;
-      const mid=document.createElement('div'); mid.className='digit-line mid'; mid.textContent=t;
-      const bot=document.createElement('div'); bot.className='digit-line bottom'; bot.textContent=o;
-      btn.append(top, mid, bot);
-
-      if (isVerseMode && state.versesReadSet.has(String(n))) btn.classList.add('read');
-      if (!isVerseMode && String(n)===(els.chapterSelect?.value||'')) btn.classList.add('active');
-
-      btn.addEventListener('click', async ()=>{
-        if (isVerseMode){
-          const num = String(n);
-          if (state.versesReadSet.has(num)){ state.versesReadSet.delete(num); btn.classList.remove('read'); }
-          else { state.versesReadSet.add(num); btn.classList.add('read'); }
-          saveProgressDebounced(els.bookSelect.value, els.chapterSelect.value);
-
-          // 포인터 이동 & 스크롤
-          state.currentVersePtr = n;
-          const target = document.getElementById(`v-${num}`);
-          if (target) target.scrollIntoView({behavior:'smooth', block:'start'});
-        } else {
-          if (els.chapterSelect) els.chapterSelect.value = String(n);
-          els.digitGrid.querySelectorAll('.digit-btn.active').forEach(b=>b.classList.remove('active'));
-          btn.classList.add('active');
-          await renderPassage();
-          const box = $('#passageBox'); if (box && box.scrollIntoView) box.scrollIntoView({behavior:'smooth', block:'start'});
-        }
-      });
-
-      els.digitGrid.appendChild(btn);
     }
-  }
-  function syncStatusActive(){
-    if (!els.digitGrid) return;
-    if (state.mode==='chapter'){
-      const val = els.chapterSelect?.value || '';
-      els.digitGrid.querySelectorAll('.digit-btn').forEach(btn=>{
-        btn.classList.toggle('active', btn.getAttribute('data-chapter')===val);
-      });
-    } else {
-      els.digitGrid.querySelectorAll('.digit-btn').forEach(btn=>{
-        const v = btn.getAttribute('data-verse'); if (!v) return;
-        btn.classList.toggle('read', state.versesReadSet.has(v));
-      });
-    }
+    els.passageText.appendChild(frag);
   }
 
-  // ---------- 음성 인식 (Web Speech API) ----------
-  let recognition=null, recognizing=false, pendingSoftAdvance=null;
+  function highlightPointer(){
+    // 모두 해제
+    $$('.word.active').forEach(w=>w.classList.remove('active'));
+    // 완료 어절 색 바꾸기(현재 절 기준)
+    const toks = state.verseTokens.get(state.currentVerse)||[];
+    for(let i=0;i<toks.length;i++){
+      const el = $(`#w-${state.currentVerse}-${i}`);
+      if(!el) continue;
+      el.classList.toggle('done', i < state.currentWord);
+      if(i===state.currentWord) el.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+    const curEl = $(`#w-${state.currentVerse}-${state.currentWord}`);
+    if(curEl) curEl.classList.add('active');
+  }
+
+  function advanceWord(span=1){
+    const toks = state.verseTokens.get(state.currentVerse)||[];
+    state.currentWord += span;
+    if(state.currentWord >= toks.length){
+      // 절 완료
+      state.versesReadSet.add(String(state.currentVerse));
+      saveProgressDebounced(state.book, state.chapter);
+      // 다음 절로
+      state.currentVerse += 1;
+      state.currentWord = 0;
+      // 다음 절이 없으면 종료
+      if(!state.verseTokens.has(state.currentVerse)){
+        state.currentVerse -= 1; // 마지막 절로 고정
+        state.currentWord = (state.verseTokens.get(state.currentVerse)||[]).length-1;
+      }
+    }
+    highlightPointer();
+  }
+
+  // ===== ASR (어절 매칭) =====
+  let recognition=null, recognizing=false, pendingSoft=null;
 
   function ensureRecognition(){
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
-    const rec = new SR();
-    rec.lang='ko-KR'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=5;
+    const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR) return null;
+    const rec=new SR(); rec.lang='ko-KR'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=5;
     return rec;
   }
   function setMicVisual(on){
-    if (!els.micBtn) return;
-    els.micBtn.classList.toggle('recording', !!on);
-    els.micBtn.textContent = on ? '🛑 인식 중지' : '🎤 음성으로 찾기';
+    els.micBtn?.classList.toggle('recording', !!on);
+    if(els.micBtn) els.micBtn.textContent = on ? '🛑 인식 중지' : '🎤 음성으로 읽기';
   }
   async function startASR(){
-    if (recognizing) return;
-    recognition = ensureRecognition();
-    if (!recognition){ els.asrText && (els.asrText.textContent='이 브라우저는 음성 인식을 지원하지 않습니다. (크롬/엣지 권장)'); return; }
-
+    if(recognizing) return;
+    recognition=ensureRecognition();
+    if(!recognition){ els.asrText && (els.asrText.textContent='이 브라우저는 음성 인식을 지원하지 않습니다.'); return; }
     recognizing=true; setMicVisual(true); els.asrText && (els.asrText.textContent='듣는 중…');
-
-    recognition.onresult = async (e)=>{
-      let finalText='', interim=''; let finals=[];
-      for (let i=e.resultIndex;i<e.results.length;i++){
-        const res=e.results[i];
-        if (res.isFinal){
-          finalText += res[0].transcript;
-          finals = Array.from({length:Math.min(res.length,5)},(_,k)=>res[k]?.transcript).filter(Boolean);
-        } else { interim += res[0].transcript; }
+    recognition.onresult=async(e)=>{
+      let finals=[], finalText='', interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i];
+        if(r.isFinal){ finalText += r[0].transcript; finals = Array.from({length:Math.min(r.length,5)},(_,k)=>r[k]?.transcript).filter(Boolean); }
+        else interim += r[0].transcript;
       }
       els.asrText && (els.asrText.textContent = finalText || interim);
-
-      if (finals.length){
-        await tryAutoAdvanceWithASR(finals);
-        // 자동 진행 체크는 내부에서 처리(PASS는 자동, SOFT는 버튼 대기)
-      }
+      if(finals.length) await matchAndAdvanceByWords(finals);
     };
-    recognition.onerror = (e)=>{ els.asrText && (els.asrText.textContent=`인식 오류: ${e.error||'unknown'}`); };
-    recognition.onend = ()=>{ recognizing=false; setMicVisual(false); };
-
+    recognition.onerror=(e)=>{ els.asrText && (els.asrText.textContent=`인식 오류: ${e.error||'unknown'}`); };
+    recognition.onend=()=>{ recognizing=false; setMicVisual(false); };
     recognition.start();
   }
-  function stopASR(){ if (recognition && recognizing) recognition.stop(); }
+  function stopASR(){ if(recognition&&recognizing) recognition.stop(); }
 
-  // ---------- 매칭 유틸 (정규화/유사도) ----------
-  function normalizeBibleKR(s){
-    if (!s) return '';
+  // ===== 매칭(어절 n-gram 창 대비) =====
+  function cleanText(s){
     return s
       .replace(/[“”"‘’'`]/g,'')
       .replace(/[.,!?;:·…、，。]/g,' ')
       .replace(/\(.*?\)|\[.*?\]/g,' ')
-      .replace(/[\u3165-\u318F]/g,'')          // 호환자모
+      .replace(/[\u3165-\u318F]/g,'')
       .replace(/[^0-9A-Za-z가-힣\s]/g,' ')
-      .replace(/\s+/g,' ').trim().toLowerCase();
+      .replace(/\s+/g,' ')
+      .trim()
+      .toLowerCase();
   }
-  const STOPWORDS = new Set(['은','는','이','가','을','를','에','에게','에서','으로','와','과','도','만','뿐','마다','보다','부터','까지']);
-  const NUM_WORDS = {'영':0,'공':0,'한':1,'하나':1,'두':2,'둘':2,'세':3,'셋':3,'네':4,'넷':4,'다섯':5,'여섯':6,'일곱':7,'여덟':8,'아홉':9,'열':10};
-  function koreanNumsToArabic(tokens){ return tokens.map(t => (t in NUM_WORDS) ? String(NUM_WORDS[t]) : t); }
-  function tokenizeKR(s){
-    const t = normalizeBibleKR(s).split(' ').filter(Boolean);
-    const numFixed = koreanNumsToArabic(t);
-    return numFixed.filter(x=>!STOPWORDS.has(x));
-  }
-  function levenshtein(a,b){
-    const dp = Array(b.length+1).fill(0).map((_,i)=>i);
-    for (let i=1;i<=a.length;i++){
+  function tokenize(s){ return cleanText(s).split(' ').filter(Boolean); }
+
+  function levenshteinTokens(A,B){
+    const dp=Array(B.length+1).fill(0).map((_,i)=>i);
+    for(let i=1;i<=A.length;i++){
       let prev=i-1; dp[0]=i;
-      for (let j=1;j<=b.length;j++){
+      for(let j=1;j<=B.length;j++){
         const tmp=dp[j];
-        dp[j] = (a[i-1]===b[j-1]) ? prev : 1+Math.min(prev, dp[j-1], dp[j]);
+        dp[j] = (A[i-1]===B[j-1]) ? prev : 1+Math.min(prev, dp[j-1], dp[j]);
         prev=tmp;
       }
     }
-    return dp[b.length];
+    return dp[B.length];
   }
-  function tokenSimilarity(aStr,bStr){
-    const A=tokenizeKR(aStr), B=tokenizeKR(bStr);
-    if (!A.length||!B.length) return 0;
-    const dist=levenshtein(A,B); const wer=dist/Math.max(A.length,B.length);
-    return 1-wer; // 0~1
+  function sim(aStr,bTokens){
+    const A=tokenize(aStr); const B=bTokens;
+    if(!A.length || !B.length) return 0;
+    const dist=levenshteinTokens(A,B);
+    const wer = dist / Math.max(A.length, B.length);
+    return 1-wer;
   }
 
-  function buildVerseWindowTexts(book, chapter, startVerse, count=3){
-    const texts=[]; let cur=startVerse;
-    for (let span=1; span<=count; span++){
-      const parts=[];
-      for (let k=0;k<span;k++){
-        const el = document.getElementById(`v-${cur+k}`); if (!el) break;
-        parts.push(el.innerText.replace(/^\d+\.\s*/, ''));
-      }
-      if (parts.length) texts.push({ start:startVerse, span:parts.length, text:parts.join(' ') });
+  function buildWordWindows(){
+    // 현재 절 기준: currentWord에서 WIN_MIN..WIN_MAX n-gram
+    const out=[];
+    const v=state.currentVerse;
+    const toks = state.verseTokens.get(v)||[];
+    for(let n=state.match.WIN_MIN; n<=state.match.WIN_MAX; n++){
+      const end = state.currentWord + n;
+      if(end>toks.length) break;
+      out.push({verse:v, start:state.currentWord, span:n, tokens:toks.slice(state.currentWord, end)});
     }
-    return texts;
-  }
-
-  async function tryAutoAdvanceWithASR(finalTexts){
-    const book=els.bookSelect?.value, chapter=els.chapterSelect?.value; if (!book||!chapter) return;
-    const ptr = state.currentVersePtr || 1;
-
-    const cand=[];
-    for (let v=ptr - state.match.windowBack; v<=ptr + state.match.windowFwd; v++){
-      if (v<1) continue;
-      const variants = buildVerseWindowTexts(book, chapter, v, 3);
-      for (const w of variants){
-        for (const hyp of finalTexts){
-          const score = tokenSimilarity(hyp, w.text);
-          cand.push({verse:v, span:w.span, hyp, score});
+    // 필요 시 다음 절의 앞부분도 후보로 포함(LOOKAHEAD_VERSE)
+    if(state.match.LOOKAHEAD_VERSE>0){
+      const v2=v+1;
+      if(state.verseTokens.has(v2)){
+        const toks2 = state.verseTokens.get(v2)||[];
+        for(let n=state.match.WIN_MIN; n<=state.match.WIN_MAX; n++){
+          if(n>toks2.length) break;
+          out.push({verse:v2, start:0, span:n, tokens:toks2.slice(0,n)});
         }
       }
     }
-    cand.sort((x,y)=>y.score-x.score);
-    const best=cand[0];
+    return out;
+  }
 
-    if (els.matchInfo){
+  async function matchAndAdvanceByWords(finals){
+    const windows = buildWordWindows();
+    if(!windows.length) return;
+
+    const scored=[];
+    for(const w of windows){
+      for(const hyp of finals){
+        const score = sim(hyp, w.tokens);
+        scored.push({w,hyp,score});
+      }
+    }
+    scored.sort((a,b)=>b.score-a.score);
+
+    // 순위 UI(상위 5개)
+    renderRank(scored.slice(0,5));
+
+    const best = scored[0];
+    if(els.matchInfo){
       const pct = best ? Math.round(best.score*100) : 0;
-      els.matchInfo.textContent = `유사도: ${pct}% (${best ? `${best.verse}~${best.verse+best.span-1}절` : '-'})`;
+      const range = best ? `${best.w.verse}절 ${best.w.start+1}~${best.w.start+best.w.span}어절` : '-';
+      els.matchInfo.textContent = `유사도: ${pct}% (${range})`;
     }
+    if(!best) return;
 
-    if (!best) return;
-
-    if (best.score >= state.match.PASS){
-      await markVersesReadAndAdvance(book, chapter, best.verse, best.span);
-      pendingSoftAdvance = null;
-      els.softAdv && (els.softAdv.disabled = true);
-    } else if (best.score >= state.match.SOFT){
-      pendingSoftAdvance = {book, chapter, verse:best.verse, span:best.span};
-      els.softAdv && (els.softAdv.disabled = false);
+    if(best.score >= state.match.PASS && els.autoAdv?.checked){
+      // 어절 자동 진행
+      if(best.w.verse !== state.currentVerse){
+        // 다음 절로 점프 (현재 절 완료 처리)
+        const curToks = state.verseTokens.get(state.currentVerse)||[];
+        state.currentWord = curToks.length; // 끝으로
+        advanceWord(0); // 절 넘김 로직 실행
+      }
+      advanceWord(best.w.span);
+      pendingSoft=null; els.softAdv && (els.softAdv.disabled=true);
+    } else if(best.score >= state.match.SOFT){
+      pendingSoft = { verse:best.w.verse, start:best.w.start, span:best.w.span };
+      els.softAdv && (els.softAdv.disabled=false);
     } else {
-      els.asrText && (els.asrText.textContent += '  (다시 또박또박 읽어주세요)');
+      els.asrText && (els.asrText.textContent += ' (조금만 더 또박또박!)');
     }
   }
 
-  async function markVersesReadAndAdvance(book, chapter, startVerse, span){
-    for (let v=startVerse; v<startVerse+span; v++){
-      state.versesReadSet.add(String(v));
-    }
-    saveProgressDebounced(book, chapter);
-
-    const next = startVerse + span;
-    state.currentVersePtr = next;
-
-    const target = document.getElementById(`v-${next}`);
-    if (target) target.scrollIntoView({behavior:'smooth', block:'start'});
-
-    if (state.mode==='verse') syncStatusActive();
+  function renderRank(items){
+    els.rankList.innerHTML='';
+    items.forEach(({w,hyp,score})=>{
+      const li=document.createElement('li');
+      li.textContent = `${Math.round(score*100)}% — ${w.verse}절 ${w.start+1}~${w.start+w.span}어절  |  “${hyp}”`;
+      els.rankList.appendChild(li);
+    });
   }
 
-  // ---------- 이벤트 바인딩 ----------
-  function bindSafely(el, ev, fn){ if (!el||BOUND.has(el)) return; on(el, ev, fn); BOUND.add(el); }
-  function wireEvents(){
+  // ===== 이벤트 =====
+  function bindSafely(el,ev,fn){ if(!el||BOUND.has(el)) return; on(el,ev,fn); BOUND.add(el); }
+  function wire(){
     // 인증
-    bindSafely(els.signupBtn,'click',handleSignup);
-    bindSafely(els.loginBtn,'click',handleLogin);
-    bindSafely(els.logoutBtn,'click',handleLogout);
-    bindSafely(els.signupForm,'submit',handleSignup);
-    bindSafely(els.loginForm,'submit',handleLogin);
+    bindSafely(els.signupForm,'submit',async e=>{e.preventDefault(); const email=els.signupEmail.value.trim(), pw=els.signupPassword.value; await auth.createUserWithEmailAndPassword(email,pw).catch(err=>alert(err.message)); });
+    bindSafely(els.loginForm,'submit',async e=>{e.preventDefault(); const email=els.loginEmail.value.trim(), pw=els.loginPassword.value; await auth.signInWithEmailAndPassword(email,pw).catch(err=>alert(err.message)); });
+    bindSafely(els.signupBtn,'click',e=>els.signupForm?.dispatchEvent(new Event('submit')));
+    bindSafely(els.loginBtn,'click',e=>els.loginForm?.dispatchEvent(new Event('submit')));
+    bindSafely(els.logoutBtn,'click',async()=>{ await auth.signOut(); });
 
-    // 권/장
-    bindSafely(els.bookSelect,'change', async ()=>{ await fillChapters(); await renderPassage(); });
-    bindSafely(els.chapterSelect,'change', async ()=>{ await renderPassage(); syncStatusActive(); state.currentVersePtr=1; });
-
-    // 모드 토글
-    bindSafely(els.modeChapter,'click', async ()=>{
-      state.mode='chapter';
-      els.modeChapter.classList.add('active'); els.modeChapter.setAttribute('aria-pressed','true');
-      els.modeVerse.classList.remove('active'); els.modeVerse.setAttribute('aria-pressed','false');
-      await fillChapters(); syncStatusActive();
-    });
-    bindSafely(els.modeVerse,'click', async ()=>{
-      state.mode='verse';
-      els.modeVerse.classList.add('active'); els.modeVerse.setAttribute('aria-pressed','true');
-      els.modeChapter.classList.remove('active'); els.modeChapter.setAttribute('aria-pressed','false');
-      await renderPassage(); // 절 수 반영 → 현황표 갱신
-    });
+    // 권 변경 → 장 로드
+    bindSafely(els.bookSelect,'change', async ()=>{ await loadChapters(els.bookSelect.value); });
 
     // 음성
-    bindSafely(els.micBtn,'click', ()=>{ recognizing ? stopASR() : startASR(); });
-
-    // 무난 진행 버튼
-    bindSafely(els.softAdv,'click', async ()=>{
-      if (!pendingSoftAdvance) return;
-      const {book, chapter, verse, span} = pendingSoftAdvance;
-      await markVersesReadAndAdvance(book, chapter, verse, span);
-      pendingSoftAdvance=null; els.softAdv.disabled=true;
+    bindSafely(els.micBtn,'click', ()=>{ recognizing?stopASR():startASR(); });
+    bindSafely(els.softAdv,'click', ()=>{
+      if(!pendingSoft) return;
+      if(pendingSoft.verse !== state.currentVerse){
+        const curToks = state.verseTokens.get(state.currentVerse)||[];
+        state.currentWord = curToks.length;
+        advanceWord(0);
+      }
+      advanceWord(pendingSoft.span);
+      pendingSoft=null; els.softAdv.disabled=true;
     });
-
-    // data-action 여분 버튼 대응
-    $$('[data-action="signup"]').forEach(b=>bindSafely(b,'click',handleSignup));
-    $$('[data-action="login"]').forEach(b=>bindSafely(b,'click',handleLogin));
-    $$('[data-action="logout"]').forEach(b=>bindSafely(b,'click',handleLogout));
-
-    log('이벤트 바인딩 완료');
+    if(els.softAdv) els.softAdv.disabled=true;
   }
-  if (document.readyState==='loading') on(document,'DOMContentLoaded',wireEvents,{once:true}); else wireEvents();
+  document.readyState==='loading'?on(document,'DOMContentLoaded',wire,{once:true}):wire();
 
-  // ---------- 인증 액션 ----------
-  async function handleSignup(e){
-    if (e) e.preventDefault();
-    const form=els.signupForm||document;
-    const email=(els.signupEmail?.value?.trim())||(form.querySelector('#signupEmail')?.value?.trim())||'';
-    const password=(els.signupPassword?.value)||(form.querySelector('#signupPassword')?.value)||'';
-    try{
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw {code:'auth/invalid-email'};
-      if (!password || password.length<6) throw {code:'auth/weak-password'};
-      const cred = await auth.createUserWithEmailAndPassword(email, password);
-      log('회원가입 완료', cred.user?.uid);
-    } catch(err){ alert(errorText(err.code, err.message)); console.error('회원가입 오류:', err); }
-  }
-  async function handleLogin(e){
-    if (e) e.preventDefault();
-    const form=els.loginForm||document;
-    const email=(els.email?.value?.trim())||(form.querySelector('#loginEmail')?.value?.trim())||'';
-    const password=(els.password?.value)||(form.querySelector('#loginPassword')?.value)||'';
-    try{
-      const cred = await auth.signInWithEmailAndPassword(email, password);
-      log('로그인 완료', cred.user?.uid);
-    } catch(err){ alert(errorText(err.code, err.message)); console.error('로그인 오류:', err); }
-  }
-  async function handleLogout(e){
-    if (e) e.preventDefault();
-    try{ await auth.signOut(); log('로그아웃 완료'); }
-    catch(err){ alert('로그아웃 실패: '+(err.message||'알 수 없는 오류')); }
-  }
+  // ===== 인증 상태 =====
+  auth.onAuthStateChanged(async user=>{
+    if(user){
+      state.userId=user.uid;
+      els.userEmail&&(els.userEmail.textContent=user.email||'(알 수 없음)');
+      els.welcome&&(els.welcome.textContent='샬롬! 말씀읽기를 시작해볼까요?');
+      views.auth?.classList.add('hidden'); views.app?.classList.remove('hidden');
 
-  // ---------- 인증 상태 ----------
-  auth.onAuthStateChanged( async (user)=>{
-    if (user){
-      state.userId = user.uid; await ensureUserDoc(user);
-      if (els.userEmail) els.userEmail.textContent = user.email || user.displayName || '(알 수 없음)';
-      if (els.welcome) els.welcome.textContent = '샬롬! 말씀읽기를 시작해볼까요?';
-      show(views.app||document.body);
-
-      await loadBibleBooks();
-      await fillChapters();
-      await renderPassage();
-      syncStatusActive();
-    } else {
-      state.userId=null; show(views.auth||document.body);
+      await loadBooks();
+      // 첫 권 자동 선택 및 장 로드
+      const first = els.bookSelect?.options?.[0]?.value;
+      if(first){ els.bookSelect.value=first; await loadChapters(first); }
+    }else{
+      state.userId=null;
+      views.app?.classList.add('hidden'); views.auth?.classList.remove('hidden');
     }
   });
 
