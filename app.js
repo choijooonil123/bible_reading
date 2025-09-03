@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable: 연속매칭·final필수) + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -82,7 +82,8 @@
   const state = {
     bible: null, currentBookKo: null, currentChapter: null,
     verses: [], currentVerseIdx: 0, listening:false, recog:null,
-    progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}}
+    progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
+    suppressAutoRestart: false // onend 자동재시작 억제용 가드
   };
 
   // ---------- bible.json ----------
@@ -178,7 +179,7 @@
   async function ensureUserDoc(u, opts={}) {
     if (!db || !u) return;
     const data = {
-      email: u.email || "",
+      email: u.email || ",
       versesRead: firebase.firestore.FieldValue.increment(0),
       chaptersRead: firebase.firestore.FieldValue.increment(0),
       last: state.myStats.last || null,
@@ -375,7 +376,7 @@
     return r;
   };
 
-  // 모드 프로파일
+  // 모드 프로파일 (빠름/보통/느긋함)
   const RECOG_PROFILES = {
     fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
     normal: { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:500, cooldownMs:700, postAdvanceDelayMs:400 },
@@ -542,28 +543,58 @@
     }
   }
 
-  async function completeVerseWithProfile(){
-    stopListening(false);
-    await incVersesRead(1);
-    await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
-    const b = getBookByKo(state.currentBookKo);
-    const auto = els.autoAdvance ? els.autoAdvance.checked : true;
+  // ---------- 자동이동/재시작 유틸 ----------
+  async function advanceToNextVerse() {
+    if (state.currentVerseIdx < state.verses.length - 1) {
+      state.currentVerseIdx++;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      return true;
+    }
+    return false;
+  }
 
-    if (auto){
-      if (state.currentVerseIdx < state.verses.length - 1){
-        state.currentVerseIdx++;
-        state.myStats.last.verse = state.currentVerseIdx + 1;
-        saveLastPosition();
-        updateVerseText();
-        stableSince = 0; lastPrefix = 0;
-        startListening(false);
-      } else {
+  async function hardRestartRecognition(delayMs = 250) {
+    state.suppressAutoRestart = true; // onend 자동재시작 방지
+    stopListening(false);
+    try { state.recog = null; } catch(_) {}
+    await new Promise(r => setTimeout(r, delayMs)); // 자원 반환 대기
+    startListening(false);
+    setTimeout(() => { state.suppressAutoRestart = false; }, 100);
+  }
+
+  async function completeVerseWithProfile(){
+    // 카운트 업데이트
+    await incVersesRead(1);
+
+    const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
+    const b = getBookByKo(state.currentBookKo);
+
+    // 완료 후 잠깐 숨고르기
+    await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
+
+    if (auto) {
+      // onend 자동재시작이 끼어들지 않도록 억제 후 정지
+      state.suppressAutoRestart = true;
+      stopListening(false);
+
+      const moved = await advanceToNextVerse();
+      if (!moved) {
         await markChapterDone(b.id, state.currentChapter);
         state.myStats.last.verse = 0;
         state.myStats.last.chapter = state.currentChapter;
         saveLastPosition();
         alert("장 완료! 다음 장으로 이동하세요.");
+        state.suppressAutoRestart = false; // 해제
+        return;
       }
+
+      // 매칭 상태 초기화
+      stableSince = 0; lastPrefix = 0;
+
+      // 음성인식 완전 재기동
+      await hardRestartRecognition(250); // 200~400 사이에서 환경에 맞게 조절 가능
     }
   }
 
@@ -576,8 +607,16 @@
       return;
     }
     stableSince=0; lastPrefix=0;
+
     state.recog.onresult = onSpeechResult;
-    state.recog.onend = () => { if (state.listening) { try{ state.recog.start(); }catch(_){} } };
+
+    // onend 자동 재시작: 억제 가드가 꺼져 있고, listening=true일 때만
+    state.recog.onend = () => {
+      if (state.listening && !state.suppressAutoRestart) {
+        try { state.recog.start(); } catch(_) {}
+      }
+    };
+
     try {
       state.recog.start();
       state.listening = true;
@@ -596,10 +635,10 @@
   }
 
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
-  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false);
-    if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; startListening(false);} });
-  els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false);
-    if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; startListening(false);} });
+  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; state.suppressAutoRestart = true; stopListening(false);
+    if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; hardRestartRecognition(200); } else { state.suppressAutoRestart=false; } });
+  els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; state.suppressAutoRestart = true; stopListening(false);
+    if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; hardRestartRecognition(200); } else { state.suppressAutoRestart=false; } });
 
   // ---------- Leaderboard ----------
   async function loadLeaderboard() {
