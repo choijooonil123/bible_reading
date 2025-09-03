@@ -113,6 +113,26 @@
           <strong id="myStats">—</strong>
           <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
         </div>
+
+        <!-- 마이크 레벨 -->
+        <div class="row mt12" style="align-items:center; gap:8px;">
+          <span class="muted sm">마이크 레벨</span>
+          <div id="micBarWrap" style="flex:1; height:8px; background:#2a2f45; border-radius:4px; overflow:hidden;">
+            <div id="micBar" style="height:100%; width:0%; background:#5bd38b; transition:width .08s;"></div>
+          </div>
+          <span id="micDb" class="muted sm" style="width:48px; text-align:right;">-∞dB</span>
+        </div>
+      </section>
+
+      <!-- 음성인식 모드 선택 -->
+      <section class="card">
+        <h3>🎙️ 음성인식 모드</h3>
+        <div class="row" style="gap:8px;">
+          <label><input type="radio" name="recogMode" value="fast"/> 빠름</label>
+          <label><input type="radio" name="recogMode" value="normal" checked/> 보통</label>
+          <label><input type="radio" name="recogMode" value="lenient"/> 느긋함</label>
+        </div>
+        <p class="muted sm">※ 빠름=빡빡 / 보통=기본 / 느긋함=관대·여유</p>
       </section>
 
       <!-- 순위 -->
