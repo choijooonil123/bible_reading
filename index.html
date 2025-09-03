@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>말씀읽기APP</title>
+  <title>말씀읽기APP — 이전 레이아웃 + 어절 자동진행</title>
 
   <link rel="stylesheet" href="styles.css"/>
 
@@ -12,10 +12,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
 
-  <!-- 본인 프로젝트 설정 -->
+  <!-- 본인 프로젝트 설정 (반드시 app.js보다 먼저!) -->
   <script src="firebaseConfig.js" defer></script>
 
-  <!-- 앱 -->
+  <!-- 앱 코드 -->
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -54,60 +54,50 @@
 
     <div class="card">
       <h2 class="h1" id="welcomeText">샬롬!</h2>
-      <p class="p">말씀을 선택해 읽어보세요.</p>
+      <p class="p">권(책)을 선택하면 아래에 동그란 장 버튼 → 절수 → 본문 → 순위가 표시됩니다.</p>
 
-      <!-- 권/장 선택 -->
+      <!-- 권 선택 -->
       <div class="row" style="margin-bottom:12px">
         <div class="col">
           <label class="p">권(책)</label>
           <select id="bookSelect" class="input"></select>
         </div>
-        <div class="col">
-          <label class="p">장</label>
-          <select id="chapterSelect" class="input"></select>
-        </div>
       </div>
 
-      <!-- 모드 토글 & 범례 -->
-      <div class="row" style="margin:6px 0 10px">
-        <div class="col" style="flex:0 0 auto">
-          <div class="segmented">
-            <button type="button" id="modeChapter" class="seg-btn active" aria-pressed="true">장 보기</button>
-            <button type="button" id="modeVerse" class="seg-btn" aria-pressed="false">절 보기</button>
-          </div>
-        </div>
-        <div class="col" style="flex:1 1 auto; display:flex; align-items:center; gap:10px">
-          <span class="legend"><span class="dot unread"></span> 미읽음</span>
-          <span class="legend"><span class="dot read"></span> 읽음</span>
-        </div>
+      <!-- 동그란 장 버튼 -->
+      <div class="card" style="margin-bottom:10px">
+        <div class="p" style="margin-top:0">장</div>
+        <div id="chapterCircles" class="circle-grid"></div>
       </div>
 
-      <!-- 현황표(장/절 바로가기) -->
-      <div id="statusBoard" class="card" style="margin-bottom:12px">
-        <div class="p" style="margin-top:0">현황표 (바로가기)</div>
-        <div id="digitGrid" class="digit-grid"></div>
-      </div>
-
-      <!-- 음성 인식 -->
-      <div class="row" style="align-items:center; gap:8px; margin:8px 0 12px">
-        <button id="micBtn" class="btn" type="button">🎤 음성으로 찾기</button>
-        <span id="asrHint" class="p" style="margin:0">예: “창세기 1장 3절”</span>
-      </div>
-      <div id="asrText" class="p" style="opacity:.8; margin-top:-6px"></div>
-
-      <!-- 자동 진행/정확도 -->
-      <div class="row" style="align-items:center; gap:10px; margin:6px 0 6px">
-        <label class="p" style="margin:0; display:flex; align-items:center; gap:6px">
-          <input id="autoAdvance" type="checkbox" checked />
-          자동 진행(유사도 기준 통과 시 다음 절로)
-        </label>
-        <span class="p" id="matchInfo" style="margin:0; opacity:.85">유사도: -</span>
-        <button id="softAdvanceBtn" class="btn ghost" type="button" title="유사도 중간대에서 수동으로 다음 절">무난 진행</button>
+      <!-- 절수 -->
+      <div class="card" style="margin-bottom:10px">
+        <div class="p" style="margin-top:0">절수</div>
+        <div id="verseInfo" class="verse-info">-</div>
       </div>
 
       <!-- 본문 -->
-      <div id="passageBox" class="card" style="background:#0e1533; border-radius:12px;">
-        <div id="passageText" style="white-space:pre-wrap; line-height:1.75"></div>
+      <div id="passageBox" class="card">
+        <div class="row" style="align-items:center; gap:8px; margin:0 0 6px">
+          <button id="micBtn" class="btn" type="button">🎤 음성으로 읽기</button>
+          <span class="p" id="asrHint" style="margin:0">읽는 대로 말하세요. 일정 유사도면 **다음 어절**로 자동 진행.</span>
+        </div>
+        <div class="row" style="align-items:center; gap:10px; margin:0 0 10px">
+          <label class="p" style="margin:0; display:flex; align-items:center; gap:6px">
+            <input id="autoAdvance" type="checkbox" checked />
+            자동 진행(어절 단위)
+          </label>
+          <span class="p" id="matchInfo" style="margin:0; opacity:.85">유사도: -</span>
+          <button id="softAdvanceBtn" class="btn ghost" type="button" title="유사도 중간대에서 수동으로 다음 어절">무난 진행</button>
+        </div>
+
+        <div id="passageText" class="passage"></div>
+      </div>
+
+      <!-- 순위(ASR 매칭 상위 후보) -->
+      <div class="card">
+        <div class="p" style="margin-top:0">순위(매칭 상위 후보)</div>
+        <ol id="rankList" class="rank-list"></ol>
       </div>
     </div>
   </section>
