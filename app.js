@@ -13,6 +13,13 @@
   const log = (...a) => console.log('[APP]', ...a);
   const BOUND = new WeakSet();
 
+  // ✅ [추가] 성경 버전 문서 ID 한 곳에서 관리 (필수 최소 수정)
+  const VERSION_ID = '개역한글'; // Firestore: bible/{여기}/books/...
+
+  // (선택) 아주 얇은 안전 가드: 비어있을 때 사용자에게 보이는 한 줄 안내에만 사용
+  const EMPTY_LABEL_BOOKS = '책 데이터가 없습니다 (bible/'+VERSION_ID+'/books 확인)';
+  const EMPTY_LABEL_CHAPS = '장 데이터가 없습니다';
+
   // ---------- Firebase 초기화 ----------
   try {
     const cfg = (window && (window.firebaseConfig || window.FIREBASE_CONFIG || window.firebase_config)) || (typeof firebaseConfig !== 'undefined' ? firebaseConfig : null);
@@ -137,35 +144,68 @@
   }
 
   // ---------- 성경 불러오기 ----------
+  // ✅ [수정] '개역한글' → VERSION_ID 로만 변경 + 아주 얇은 빈 결과 안내
   async function loadBibleBooks(){
-    const snap = await db.collection('bible').doc('개역한글').collection('books').get();
-    els.bookSelect.innerHTML = '';
-    snap.forEach(doc=>{
-      const opt = document.createElement('option'); opt.value = doc.id; opt.textContent = doc.id;
+    try {
+      const snap = await db.collection('bible').doc(VERSION_ID).collection('books').get();
+      els.bookSelect.innerHTML = '';
+      if (snap.empty) {
+        const opt = document.createElement('option');
+        opt.value = ''; opt.textContent = EMPTY_LABEL_BOOKS;
+        els.bookSelect.appendChild(opt);
+        return;
+      }
+      snap.forEach(doc=>{
+        const opt = document.createElement('option'); opt.value = doc.id; opt.textContent = doc.id;
+        els.bookSelect.appendChild(opt);
+      });
+      await fillChapters();
+    } catch (e) {
+      console.error('loadBibleBooks 오류:', e);
+      els.bookSelect.innerHTML = '';
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = '불러오기 오류 (콘솔 확인)';
       els.bookSelect.appendChild(opt);
-    });
-    await fillChapters();
+    }
   }
 
+  // ✅ [수정] '개역한글' → VERSION_ID 로만 변경 + 빈 결과 한 줄 안내
   async function fillChapters(){
     const book = els.bookSelect?.value; if (!book) return;
-    const snap = await db.collection('bible').doc('개역한글').collection('books').doc(book).collection('chapters').get();
-    const chapterIds = snap.docs.map(d=>d.id).sort((a,b)=>Number(a)-Number(b));
-    if (els.chapterSelect){
-      els.chapterSelect.innerHTML = '';
-      chapterIds.forEach(id=>{
-        const opt = document.createElement('option'); opt.value = id; opt.textContent = `${id}장`;
+    try {
+      const snap = await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').get();
+      const chapterIds = snap.docs.map(d=>d.id).sort((a,b)=>Number(a)-Number(b));
+      if (els.chapterSelect){
+        els.chapterSelect.innerHTML = '';
+        if (chapterIds.length === 0) {
+          const opt = document.createElement('option'); opt.value = ''; opt.textContent = EMPTY_LABEL_CHAPS;
+          els.chapterSelect.appendChild(opt);
+          renderStatusBoard(0);
+          return;
+        }
+        chapterIds.forEach(id=>{
+          const opt = document.createElement('option'); opt.value = id; opt.textContent = `${id}장`;
+          els.chapterSelect.appendChild(opt);
+        });
+      }
+      if (state.mode==='chapter') renderStatusBoard(chapterIds.length);
+    } catch (e) {
+      console.error('fillChapters 오류:', e);
+      if (els.chapterSelect){
+        els.chapterSelect.innerHTML = '';
+        const opt = document.createElement('option'); opt.value = ''; opt.textContent = '장 불러오기 오류';
         els.chapterSelect.appendChild(opt);
-      });
+      }
+      renderStatusBoard(0);
     }
-    if (state.mode==='chapter') renderStatusBoard(chapterIds.length);
   }
 
+  // ✅ [수정] 본문 조회 경로의 '개역한글' → VERSION_ID 만 변경 (기능 동일)
   async function renderPassage(){
     if (!els.bookSelect || !els.chapterSelect || !els.passageText) return;
     const book = els.bookSelect.value, chapter = els.chapterSelect.value; if (!book || !chapter) return;
 
-    const doc = await db.collection('bible').doc('개역한글').collection('books').doc(book).collection('chapters').doc(chapter).get();
+    const doc = await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').doc(chapter).get();
     const verses = doc.data()?.verses || {};
 
     await loadProgress(book, chapter);
