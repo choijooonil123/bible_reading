@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(모드: 빠름/보통/느긋함) + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable: 연속매칭·final필수) + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -363,27 +363,27 @@
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
-  // ---------- Speech Recognition (모드 지원: fast/normal/lenient) ----------
+  // ---------- Speech Recognition (v3-stable: 연속매칭 + final필수 + 임계강화) ----------
   const getRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     const r = new SR();
     r.lang = 'ko-KR';
     r.continuous = true;
-    r.interimResults = true;
+    r.interimResults = true; // 중간은 보지만, 완료 체크는 final에서만
     try { r.maxAlternatives = 3; } catch(_) {}
     return r;
   };
 
-  // 프로파일 모음
+  // 모드 프로파일
   const RECOG_PROFILES = {
-    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:200, cooldownMs:250, postAdvanceDelayMs:200 },
-    normal: { shortLen:30, mediumLen:60, minRatioShort:0.88, minRatioMedium:0.86, minRatioLong:0.84, holdMs:300, cooldownMs:300, postAdvanceDelayMs:400 },
-    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.80, holdMs:500, cooldownMs:450, postAdvanceDelayMs:600 }
+    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
+    normal: { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:500, cooldownMs:700, postAdvanceDelayMs:400 },
+    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.88, minRatioMedium:0.86, minRatioLong:0.84, holdMs:600, cooldownMs:800, postAdvanceDelayMs:500 }
   };
   let MATCH_PROFILE = RECOG_PROFILES.normal;
 
-  // 모드 라디오 → 프로파일 변경
+  // 라디오 → 프로파일 변경
   document.querySelectorAll("input[name=recogMode]")?.forEach(radio=>{
     radio.addEventListener("change", ()=>{
       const val = document.querySelector("input[name=recogMode]:checked")?.value || "normal";
@@ -445,7 +445,9 @@
       .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
   }
 
-  // 조사/불용어(경량) + 발음 보정(의≈에)
+  // v3: 불용어/발음치환 기본 OFF (과매칭 방지)
+  const USE_STOPWORD_STRIP = false;
+  const USE_PRONUN_HEUR   = false;
   const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
   const pronunciationHeuristics = s => s.replace(/의/g,"에");
 
@@ -454,23 +456,31 @@
     let t = (s||"").normalize("NFKC")
       .replace(/[“”‘’"'\u200B-\u200D`´^~]/g,"")
       .toLowerCase();
+
     t = normalizeKoreanNumbers(t);
-    t = t.replace(STOPWORDS," ");
-    if (forSpoken) t = pronunciationHeuristics(t);
+    if (USE_STOPWORD_STRIP) t = t.replace(STOPWORDS," ");
+    if (forSpoken && USE_PRONUN_HEUR) t = pronunciationHeuristics(t);
+
     t = t.replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim();
     t = decomposeJamo(t).replace(/\s+/g,"");
     return t;
   }
 
-  // 서브시퀀스 기반 prefix 길이(자모)
-  function matchedPrefixLenJamo(targetJamo, spokenJamo){
+  // 연속(prefix) 매칭만 허용: spoken 시작 오프셋 0..5 탐색
+  function matchedPrefixLenContiguous(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return 0;
-    let ti=0, si=0;
-    while (ti<targetJamo.length && si<spokenJamo.length){
-      if (targetJamo[ti]===spokenJamo[si]) { ti++; si++; }
-      else { si++; }
+    let best = 0;
+    const maxShift = Math.min(5, Math.max(0, spokenJamo.length-1));
+    for (let shift = 0; shift <= maxShift; shift++){
+      let ti = 0, si = shift, cur = 0;
+      while (ti < targetJamo.length && si < spokenJamo.length){
+        if (targetJamo[ti] !== spokenJamo[si]) break;
+        cur++; ti++; si++;
+      }
+      if (cur > best) best = cur;
+      if (best >= targetJamo.length) break;
     }
-    return ti;
+    return best;
   }
 
   function paintRead(prefixLen){
@@ -511,7 +521,7 @@
     let bestPref = 0;
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
-      const pref = matchedPrefixLenJamo(targetJ, spokenJ);
+      const pref = matchedPrefixLenContiguous(targetJ, spokenJ);
       if (pref > bestPref) bestPref = pref;
     }
 
@@ -524,23 +534,18 @@
     const holdOk = (now - stableSince) >= MATCH_PROFILE.holdMs;
     const coolOk = (now - lastCompleteTs) >= MATCH_PROFILE.cooldownMs;
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
-    const needFinalForShort = L <= MATCH_PROFILE.shortLen;
 
-    if (ratio >= minRatio && holdOk && coolOk){
-      if (!needFinalForShort || isFinal){
-        lastCompleteTs = now;
-        completeVerseWithProfile();
-      }
+    // v3: 'final'일 때만 완료
+    if (ratio >= minRatio && holdOk && coolOk && isFinal){
+      lastCompleteTs = now;
+      completeVerseWithProfile();
     }
   }
 
   async function completeVerseWithProfile(){
     stopListening(false);
     await incVersesRead(1);
-
-    // 완료 후 잠깐 숨고르기
     await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
-
     const b = getBookByKo(state.currentBookKo);
     const auto = els.autoAdvance ? els.autoAdvance.checked : true;
 
