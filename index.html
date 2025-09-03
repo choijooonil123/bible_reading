@@ -3,23 +3,118 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>말씀읽기APP — 이전 레이아웃 + 어절 자동진행</title>
+  <title>말씀읽기APP — 올인원(index.html)</title>
 
-  <link rel="stylesheet" href="styles.css"/>
+  <!-- ===== 스타일 (styles.css 통합) ===== -->
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#10183a; --ink:#eaf0ff; --muted:#a7b3d4; --brand:#6aa6ff; --accent:#a176ff; --ok:#4cd97b;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:ui-sans-serif,system-ui,Apple SD Gothic Neo,Noto Sans KR,Segoe UI,Roboto,sans-serif;
+      color:var(--ink); background:radial-gradient(1200px 800px at 80% -10%,#1a2650 0%,#0b1020 45%);
+    }
+    .hidden{display:none!important}
+    .container{max-width:1000px;margin:0 auto;padding:20px}
+    .card{
+      background:var(--panel); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.2);
+    }
+    .h1{font-size:26px;font-weight:800;margin:0 0 10px}
+    .p{color:var(--muted);margin:4px 0 12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .col{flex:1 1 260px}
+    .input, select, input[type="email"], input[type="password"], input[type="text"]{
+      width:100%; background:#0e1533; border:1px solid rgba(255,255,255,.12); color:var(--ink);
+      border-radius:12px; padding:10px 12px; outline:none; transition:border .2s ease;
+    }
+    input:focus, select:focus{border-color:var(--brand)}
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; user-select:none;
+      border:0; border-radius:12px; padding:10px 12px; font-weight:700;
+      background:linear-gradient(180deg,#6aa6ff,#5179ff); color:#fff; box-shadow:0 8px 20px rgba(81,121,255,.25);
+    }
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:var(--ink)}
+    .btn.secondary{background:linear-gradient(180deg,#a176ff,#7c54ff)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn.recording{ box-shadow:0 0 0 4px rgba(255,77,77,.25); background:linear-gradient(180deg,#ff7a7a,#ff4d4d); }
 
-  <!-- Firebase SDK (compat) -->
+    .hr{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);margin:16px 0}
+    .header{position:sticky;top:0;backdrop-filter:blur(8px);background:rgba(11,16,32,.6);border-bottom:1px solid rgba(255,255,255,.06)}
+    .header-inner{max-width:1000px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .brand{font-weight:800;letter-spacing:.3px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#0e1533;border:1px solid rgba(255,255,255,.12);color:var(--muted)}
+    .footer{opacity:.7;font-size:12px;text-align:center;margin:26px 0}
+
+    /* 성경 목록 */
+    .book-list{
+      display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px;
+    }
+    .book-item{
+      background:#0e1533; border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px;
+      cursor:pointer; transition:transform .08s ease, border-color .2s ease, box-shadow .2s ease;
+    }
+    .book-item:hover{ border-color:var(--brand); transform:translateY(-1px); box-shadow:0 6px 18px rgba(81,121,255,.25) }
+    .book-item.active{ outline:2px solid var(--brand); outline-offset:2px; }
+
+    /* 동그란 장 버튼 */
+    .circle-grid{
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(54px,1fr)); gap:10px;
+    }
+    .circle-btn{
+      width:100%; aspect-ratio:1/1; border-radius:999px; border:1px solid rgba(255,255,255,.12);
+      background:#0e1533; color:var(--ink); font-weight:800; font-variant-numeric:tabular-nums;
+      display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .08s ease,border-color .2s ease,box-shadow .2s ease;
+    }
+    .circle-btn:hover{ border-color:var(--brand); transform:translateY(-1px); box-shadow:0 6px 18px rgba(81,121,255,.25) }
+    .circle-btn.active{ outline:2px solid var(--brand); outline-offset:2px; }
+
+    /* 읽기 현황표(절) — 2줄 숫자: 십/일 */
+    .digit-grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      gap:10px;
+    }
+    .digit-btn{
+      display:flex; flex-direction:column; justify-content:space-between;
+      border:1px solid rgba(255,255,255,.12); background:#0e1533; border-radius:14px; overflow:hidden;
+      box-shadow:0 4px 14px rgba(0,0,0,.2); cursor:pointer; user-select:none;
+      transition:transform .08s ease, box-shadow .2s ease, border-color .2s ease;
+      aspect-ratio:1/1; font-variant-numeric:tabular-nums;
+    }
+    .digit-btn:hover{ border-color:var(--brand); box-shadow:0 6px 18px rgba(81,121,255,.25); transform:translateY(-1px); }
+    .digit-line{
+      display:flex; align-items:center; justify-content:center;
+      font-weight:800; letter-spacing:.5px; line-height:1;
+      font-size:clamp(18px,3.8vw,26px);
+      flex:1;
+    }
+    .digit-line.top{ border-bottom:1px solid rgba(255,255,255,.08); }
+    .digit-btn.read{ background:linear-gradient(180deg,#2a4730,#18331d); border-color:#2e6a39 }
+
+    /* 절수 */
+    .verse-info{ font-weight:700 }
+
+    /* 본문 + 어절 하이라이트 */
+    .passage{ white-space:pre-wrap; line-height:1.85 }
+    .verse-line{ padding:3px 0; scroll-margin-top:96px }
+    .word{ padding:0 1px; border-radius:4px }
+    .word.active{ background:rgba(106,166,255,.25) }
+    .word.done{ color:#a7b3d4 }
+
+    /* 순위 리스트 */
+    .rank-list{ margin:0; padding-left:20px }
+    .rank-list li{ margin:4px 0 }
+  </style>
+
+  <!-- ===== Firebase SDK (compat) ===== -->
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
-
-  <!-- 본인 프로젝트 설정 (반드시 app.js보다 먼저!) -->
-  <script src="firebaseConfig.js" defer></script>
-
-  <!-- 앱 코드 -->
-  <script src="app.js" defer></script>
 </head>
 <body>
-  <!-- 인증 -->
+  <!-- ===== 인증 ===== -->
   <section id="authView" class="container">
     <div class="card">
       <h1 class="h1">로그인 / 회원가입</h1>
@@ -40,7 +135,7 @@
     </div>
   </section>
 
-  <!-- 앱 -->
+  <!-- ===== 앱 ===== -->
   <section id="appView" class="container hidden">
     <header class="header">
       <div class="header-inner">
@@ -54,14 +149,20 @@
 
     <div class="card">
       <h2 class="h1" id="welcomeText">샬롬!</h2>
-      <p class="p">권(책)을 선택하면 아래에 동그란 장 버튼 → 절수 → 본문 → 순위가 표시됩니다.</p>
+      <p class="p">권(책)을 고르거나 아래 <b>성경 목록</b>에서 선택하세요. 장을 고르면 <b>읽기 현황표</b>→절수→본문→순위가 표시됩니다.</p>
 
-      <!-- 권 선택 -->
+      <!-- 권 선택(드롭다운) -->
       <div class="row" style="margin-bottom:12px">
         <div class="col">
           <label class="p">권(책)</label>
           <select id="bookSelect" class="input"></select>
         </div>
+      </div>
+
+      <!-- 성경 목록 (클릭 → 해당 권 로드) -->
+      <div class="card" style="margin-bottom:10px">
+        <div class="p" style="margin-top:0">성경 목록</div>
+        <div id="bookList" class="book-list"></div>
       </div>
 
       <!-- 동그란 장 버튼 -->
@@ -70,17 +171,23 @@
         <div id="chapterCircles" class="circle-grid"></div>
       </div>
 
+      <!-- 읽기 현황표(현재 장의 절 상태) -->
+      <div class="card" style="margin-bottom:10px">
+        <div class="p" style="margin-top:0">읽기 현황표 (절)</div>
+        <div id="digitGrid" class="digit-grid"></div>
+      </div>
+
       <!-- 절수 -->
       <div class="card" style="margin-bottom:10px">
         <div class="p" style="margin-top:0">절수</div>
         <div id="verseInfo" class="verse-info">-</div>
       </div>
 
-      <!-- 본문 -->
+      <!-- 본문 + 음성 -->
       <div id="passageBox" class="card">
         <div class="row" style="align-items:center; gap:8px; margin:0 0 6px">
           <button id="micBtn" class="btn" type="button">🎤 음성으로 읽기</button>
-          <span class="p" id="asrHint" style="margin:0">읽는 대로 말하세요. 일정 유사도면 **다음 어절**로 자동 진행.</span>
+          <span class="p" id="asrHint" style="margin:0">읽는 대로 말하세요. 유사하면 <b>다음 어절</b>로 자동 진행.</span>
         </div>
         <div class="row" style="align-items:center; gap:10px; margin:0 0 10px">
           <label class="p" style="margin:0; display:flex; align-items:center; gap:6px">
@@ -88,7 +195,7 @@
             자동 진행(어절 단위)
           </label>
           <span class="p" id="matchInfo" style="margin:0; opacity:.85">유사도: -</span>
-          <button id="softAdvanceBtn" class="btn ghost" type="button" title="유사도 중간대에서 수동으로 다음 어절">무난 진행</button>
+          <button id="softAdvanceBtn" class="btn ghost" type="button">무난 진행</button>
         </div>
 
         <div id="passageText" class="passage"></div>
@@ -105,5 +212,384 @@
   <footer class="footer">
     &copy; 2025 말씀읽기APP
   </footer>
+
+  <!-- ===== Firebase 설정 (firebaseConfig.js 통합) ===== -->
+  <script>
+    /* 🔧 여기에 본인 Firebase 키를 넣으세요 */
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+  </script>
+
+  <!-- ===== 앱 스크립트 (app.js 통합) ===== -->
+  <script>
+  (function(){
+    'use strict';
+
+    const VERSION_ID='개역한글'; // ← Firestore bible/{여기}/books/...
+
+    const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+    const on=(el,ev,fn,op)=>el&&el.addEventListener(ev,fn,op);
+    const log=(...a)=>console.log('[APP]',...a);
+    const BOUND=new WeakSet();
+
+    // Firebase init
+    try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig||{}); }catch(e){ console.error('Firebase init 오류:',e); }
+    const auth=firebase.auth(), db=firebase.firestore();
+
+    const views={ auth:$('#authView'), app:$('#appView') };
+    const els={
+      signupForm:$('#signupForm'), loginForm:$('#loginForm'),
+      signupEmail:$('#signupEmail'), signupPassword:$('#signupPassword'),
+      loginEmail:$('#loginEmail'), loginPassword:$('#loginPassword'),
+      signupBtn:$('#signupBtn'), loginBtn:$('#loginBtn'), logoutBtn:$('#logoutBtn'),
+      userEmail:$('#userEmail'), welcome:$('#welcomeText'),
+
+      bookSelect:$('#bookSelect'), bookList:$('#bookList'),
+      chapterCircles:$('#chapterCircles'),
+      digitGrid:$('#digitGrid'),
+      verseInfo:$('#verseInfo'),
+      passageText:$('#passageText'),
+      rankList:'#rankList' ? $('#rankList') : null,
+
+      micBtn:$('#micBtn'), asrText:$('#asrText'),
+      autoAdv:$('#autoAdvance'), matchInfo:$('#matchInfo'), softAdv:$('#softAdvanceBtn'),
+    };
+
+    const state={
+      userId:null,
+      book:null, chapter:null,
+      verses:{},
+      verseTokens:new Map(),
+      currentVerse:1, currentWord:0,
+      versesReadSet:new Set(),
+      match:{ PASS:0.78, SOFT:0.64, WIN_MIN:3, WIN_MAX:6, LOOKAHEAD_VERSE:0 }
+    };
+
+    // 진행도 저장/로드
+    function progressDocRef(book,chapter){ if(!state.userId) return null; return db.collection('users').doc(state.userId).collection('progress').doc(`${book}-${chapter}`); }
+    async function loadProgress(book,chapter){
+      state.versesReadSet=new Set();
+      const ref=progressDocRef(book,chapter); if(!ref) return;
+      const s=await ref.get(); const d=s.data(); if(d?.readVerses) d.readVerses.forEach(v=>state.versesReadSet.add(String(v)));
+    }
+    let _saveTimer=null;
+    function saveProgressDebounced(book,chapter){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>saveProgress(book,chapter),400); }
+    async function saveProgress(book,chapter){
+      const ref=progressDocRef(book,chapter); if(!ref) return;
+      const arr=Array.from(state.versesReadSet).sort((a,b)=>Number(a)-Number(b));
+      await ref.set({readVerses:arr,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    }
+
+    // 데이터 로드
+    async function loadBooks(){
+      try{
+        const snap=await db.collection('bible').doc(VERSION_ID).collection('books').get();
+        els.bookSelect.innerHTML=''; els.bookList.innerHTML='';
+        if(snap.empty){
+          els.bookSelect.innerHTML='<option value="">책 데이터 없음</option>'; return;
+        }
+        const books=snap.docs.map(d=>d.id);
+        books.forEach(name=>{ const o=document.createElement('option'); o.value=name; o.textContent=name; els.bookSelect.appendChild(o); });
+        renderBookList(books);
+      }catch(e){
+        console.error('loadBooks 오류:',e);
+        els.bookSelect.innerHTML='<option value="">불러오기 오류</option>';
+      }
+    }
+    function renderBookList(books){
+      els.bookList.innerHTML='';
+      books.forEach(name=>{
+        const item=document.createElement('div');
+        item.className='book-item'; item.textContent=name;
+        item.addEventListener('click', async ()=>{
+          els.bookList.querySelectorAll('.book-item.active').forEach(x=>x.classList.remove('active'));
+          item.classList.add('active');
+          els.bookSelect.value=name;
+          await loadChapters(name);
+        });
+        els.bookList.appendChild(item);
+      });
+    }
+    async function loadChapters(book){
+      state.book=book;
+      els.chapterCircles.innerHTML='';
+      try{
+        const snap=await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').get();
+        const ids=snap.docs.map(d=>d.id).sort((a,b)=>Number(a)-Number(b));
+        ids.forEach(id=>{
+          const b=document.createElement('button');
+          b.type='button'; b.className='circle-btn'; b.textContent=id;
+          b.addEventListener('click', async ()=>{
+            els.chapterCircles.querySelectorAll('.circle-btn.active').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+            await loadPassage(book,id);
+          });
+          els.chapterCircles.appendChild(b);
+        });
+        if(ids.length){ els.chapterCircles.querySelector('.circle-btn')?.click(); }
+      }catch(e){ console.error('loadChapters 오류:',e); }
+    }
+    async function loadPassage(book,chapter){
+      state.book=book; state.chapter=chapter;
+      const doc=await db.collection('bible').doc(VERSION_ID).collection('books').doc(book).collection('chapters').doc(chapter).get();
+      state.verses=doc.data()?.verses||{};
+      await loadProgress(book,chapter);
+
+      const count=Object.keys(state.verses).length;
+      $('#verseInfo').textContent = count ? `${count}절` : '0절';
+
+      buildVerseTokens(); renderPassage();
+      state.currentVerse=1; state.currentWord=0; highlightPointer();
+
+      renderStatusBoard(count);        // 현황표 갱신
+      renderRank([]);                  // 순위 초기화
+    }
+
+    // 본문 토큰화/렌더
+    function normalizeKR(s){ return s.replace(/[“”"‘’'`]/g,'').replace(/\s+/g,' ').trim(); }
+    function buildVerseTokens(){
+      state.verseTokens.clear();
+      const keys=Object.keys(state.verses).sort((a,b)=>Number(a)-Number(b));
+      for(const k of keys){
+        const txt=normalizeKR(state.verses[k]||'');
+        const tokens=txt?txt.split(' '):[];
+        state.verseTokens.set(Number(k), tokens);
+      }
+    }
+    function renderPassage(){
+      els.passageText.innerHTML='';
+      const keys=Object.keys(state.verses).sort((a,b)=>Number(a)-Number(b));
+      const frag=document.createDocumentFragment();
+      for(const k of keys){
+        const line=document.createElement('div');
+        line.className='verse-line'; line.id=`v-${k}`;
+        const num=document.createElement('span'); num.style.opacity='.7'; num.style.marginRight='6px'; num.textContent=`${k}.`; line.appendChild(num);
+        const toks=state.verseTokens.get(Number(k))||[];
+        toks.forEach((w,i)=>{ const sp=document.createElement('span'); sp.className='word'; sp.id=`w-${k}-${i}`; sp.textContent=w+(i<toks.length-1?' ':''); line.appendChild(sp); });
+        frag.appendChild(line);
+      }
+      els.passageText.appendChild(frag);
+    }
+    function highlightPointer(){
+      $$('.word.active').forEach(w=>w.classList.remove('active'));
+      const toks=state.verseTokens.get(state.currentVerse)||[];
+      for(let i=0;i<toks.length;i++){
+        const el=$(`#w-${state.currentVerse}-${i}`); if(!el) continue;
+        el.classList.toggle('done', i<state.currentWord);
+        if(i===state.currentWord) el.scrollIntoView({behavior:'smooth', block:'center'});
+      }
+      const cur=$(`#w-${state.currentVerse}-${state.currentWord}`); if(cur) cur.classList.add('active');
+    }
+    function advanceWord(span=1){
+      const toks=state.verseTokens.get(state.currentVerse)||[];
+      state.currentWord+=span;
+      if(state.currentWord>=toks.length){
+        state.versesReadSet.add(String(state.currentVerse));
+        saveProgressDebounced(state.book,state.chapter);
+        syncStatusBoard();
+        state.currentVerse+=1; state.currentWord=0;
+        if(!state.verseTokens.has(state.currentVerse)){
+          state.currentVerse-=1;
+          state.currentWord=(state.verseTokens.get(state.currentVerse)||[]).length-1;
+        }
+      }
+      highlightPointer();
+    }
+
+    // 읽기 현황표(절)
+    function renderStatusBoard(total){
+      const grid=$('#digitGrid'); if(!grid) return;
+      grid.innerHTML='';
+      for(let n=1;n<=total;n++){
+        const tens=Math.floor(n/10), ones=n%10;
+        const btn=document.createElement('button');
+        btn.type='button'; btn.className='digit-btn'; btn.setAttribute('data-verse', String(n));
+        const top=document.createElement('div'); top.className='digit-line top'; top.textContent=String(tens);
+        const bot=document.createElement('div'); bot.className='digit-line bottom'; bot.textContent=String(ones);
+        btn.append(top,bot);
+        if(state.versesReadSet.has(String(n))) btn.classList.add('read');
+        btn.addEventListener('click', ()=>{
+          const s=String(n);
+          if(state.versesReadSet.has(s)){ state.versesReadSet.delete(s); btn.classList.remove('read'); }
+          else { state.versesReadSet.add(s); btn.classList.add('read'); }
+          saveProgressDebounced(state.book,state.chapter);
+          const target=$(`#v-${n}`); if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
+          state.currentVerse=n; state.currentWord=0; highlightPointer();
+        });
+        grid.appendChild(btn);
+      }
+    }
+    function syncStatusBoard(){
+      const grid=$('#digitGrid'); if(!grid) return;
+      grid.querySelectorAll('.digit-btn').forEach(btn=>{
+        const v=btn.getAttribute('data-verse');
+        btn.classList.toggle('read', state.versesReadSet.has(v));
+      });
+    }
+
+    // ASR (어절 단위)
+    let recognition=null, recognizing=false, pendingSoft=null;
+    function ensureRecognition(){
+      const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+      if(!SR) return null;
+      const rec=new SR(); rec.lang='ko-KR'; rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=5; return rec;
+    }
+    function setMicVisual(on){ els.micBtn?.classList.toggle('recording',!!on); if(els.micBtn) els.micBtn.textContent=on?'🛑 인식 중지':'🎤 음성으로 읽기'; }
+    async function startASR(){
+      if(recognizing) return;
+      recognition=ensureRecognition();
+      if(!recognition){ $('#asrHint') && ($('#asrHint').textContent='이 브라우저는 음성 인식을 지원하지 않습니다.'); return; }
+      recognizing=true; setMicVisual(true); $('#asrHint') && ($('#asrHint').textContent='듣는 중…');
+      recognition.onresult=async(e)=>{
+        let finals=[], finalText='', interim='';
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const r=e.results[i];
+          if(r.isFinal){ finalText+=r[0].transcript; finals=Array.from({length:Math.min(r.length,5)},(_,k)=>r[k]?.transcript).filter(Boolean); }
+          else interim+=r[0].transcript;
+        }
+        $('#asrHint') && ($('#asrHint').textContent = finalText || interim);
+        if(finals.length) await matchAndAdvanceByWords(finals);
+      };
+      recognition.onerror=(e)=>{ $('#asrHint') && ($('#asrHint').textContent=`인식 오류: ${e.error||'unknown'}`); };
+      recognition.onend=()=>{ recognizing=false; setMicVisual(false); };
+      recognition.start();
+    }
+    function stopASR(){ if(recognition&&recognizing) recognition.stop(); }
+
+    function cleanText(s){
+      return s
+        .replace(/[“”"‘’'`]/g,'')
+        .replace(/[.,!?;:·…、，.]/g,' ')
+        .replace(/\(.*?\)|\[.*?\]/g,' ')
+        .replace(/[\u3165-\u318F]/g,'')
+        .replace(/[^0-9A-Za-z가-힣\s]/g,' ')
+        .replace(/\s+/g,' ').trim().toLowerCase();
+    }
+    function tokenize(s){ return cleanText(s).split(' ').filter(Boolean); }
+    function levenshteinTokens(A,B){
+      const dp=Array(B.length+1).fill(0).map((_,i)=>i);
+      for(let i=1;i<=A.length;i++){
+        let prev=i-1; dp[0]=i;
+        for(let j=1;j<=B.length;j++){
+          const tmp=dp[j];
+          dp[j]=(A[i-1]===B[j-1])?prev:1+Math.min(prev,dp[j-1],dp[j]);
+          prev=tmp;
+        }
+      }
+      return dp[B.length];
+    }
+    function sim(hyp,tokens){
+      const A=tokenize(hyp), B=tokens; if(!A.length||!B.length) return 0;
+      const dist=levenshteinTokens(A,B); const wer=dist/Math.max(A.length,B.length); return 1-wer;
+    }
+    function buildWordWindows(){
+      const out=[]; const v=state.currentVerse; const toks=state.verseTokens.get(v)||[];
+      for(let n=state.match.WIN_MIN; n<=state.match.WIN_MAX; n++){
+        const end=state.currentWord+n; if(end>toks.length) break;
+        out.push({verse:v,start:state.currentWord,span:n,tokens:toks.slice(state.currentWord,end)});
+      }
+      if(state.match.LOOKAHEAD_VERSE>0){
+        const v2=v+1; if(state.verseTokens.has(v2)){
+          const t2=state.verseTokens.get(v2)||[];
+          for(let n=state.match.WIN_MIN; n<=state.match.WIN_MAX; n++){
+            if(n>t2.length) break; out.push({verse:v2,start:0,span:n,tokens:t2.slice(0,n)});
+          }
+        }
+      }
+      return out;
+    }
+    async function matchAndAdvanceByWords(finals){
+      const windows=buildWordWindows(); if(!windows.length) return;
+      const scored=[];
+      for(const w of windows){
+        for(const hyp of finals){
+          const score=sim(hyp,w.tokens); scored.push({w,hyp,score});
+        }
+      }
+      scored.sort((a,b)=>b.score-a.score);
+      renderRank(scored.slice(0,5));
+
+      const best=scored[0];
+      if(els.matchInfo){
+        const pct=best?Math.round(best.score*100):0;
+        const range=best?`${best.w.verse}절 ${best.w.start+1}~${best.w.start+best.w.span}어절`:'-';
+        els.matchInfo.textContent=`유사도: ${pct}% (${range})`;
+      }
+      if(!best) return;
+
+      if(best.score>=state.match.PASS && els.autoAdv?.checked){
+        if(best.w.verse!==state.currentVerse){
+          const cur=state.verseTokens.get(state.currentVerse)||[];
+          state.currentWord=cur.length; advanceWord(0); // 절 넘김
+        }
+        advanceWord(best.w.span);
+        pendingSoft=null; els.softAdv && (els.softAdv.disabled=true);
+      }else if(best.score>=state.match.SOFT){
+        pendingSoft={verse:best.w.verse,start:best.w.start,span:best.w.span};
+        els.softAdv && (els.softAdv.disabled=false);
+      }else{
+        $('#asrHint') && ($('#asrHint').textContent+=' (조금만 더 또박또박!)');
+      }
+    }
+    function renderRank(items){
+      if(!els.rankList) return;
+      els.rankList.innerHTML='';
+      items.forEach(({w,hyp,score})=>{
+        const li=document.createElement('li');
+        li.textContent=`${Math.round(score*100)}% — ${w.verse}절 ${w.start+1}~${w.start+w.span}어절 | “${hyp}”`;
+        els.rankList.appendChild(li);
+      });
+    }
+
+    // 이벤트
+    function bindSafely(el,ev,fn){ if(!el||BOUND.has(el)) return; on(el,ev,fn); BOUND.add(el); }
+    function wire(){
+      // 인증
+      bindSafely(els.signupForm,'submit',async e=>{e.preventDefault(); const email=els.signupEmail.value.trim(), pw=els.signupPassword.value; await auth.createUserWithEmailAndPassword(email,pw).catch(err=>alert(err.message)); });
+      bindSafely(els.loginForm,'submit',async e=>{e.preventDefault(); const email=els.loginEmail.value.trim(), pw=els.loginPassword.value; await auth.signInWithEmailAndPassword(email,pw).catch(err=>alert(err.message)); });
+      bindSafely(els.signupBtn,'click',e=>els.signupForm?.dispatchEvent(new Event('submit')));
+      bindSafely(els.loginBtn,'click',e=>els.loginForm?.dispatchEvent(new Event('submit')));
+      bindSafely(els.logoutBtn,'click',async()=>{ await auth.signOut(); });
+
+      // 권 드롭다운 → 장 로드
+      bindSafely(els.bookSelect,'change', async ()=>{ await loadChapters(els.bookSelect.value); });
+
+      // 음성
+      bindSafely(els.micBtn,'click', ()=>{ recognizing?stopASR():startASR(); });
+      bindSafely(els.softAdv,'click', ()=>{
+        if(!pendingSoft) return;
+        if(pendingSoft.verse!==state.currentVerse){
+          const cur=state.verseTokens.get(state.currentVerse)||[];
+          state.currentWord=cur.length; advanceWord(0);
+        }
+        advanceWord(pendingSoft.span); pendingSoft=null; els.softAdv.disabled=true;
+      });
+      if(els.softAdv) els.softAdv.disabled=true;
+    }
+    document.readyState==='loading'?on(document,'DOMContentLoaded',wire,{once:true}):wire();
+
+    // 인증 상태
+    auth.onAuthStateChanged(async user=>{
+      if(user){
+        state.userId=user.uid;
+        els.userEmail&&(els.userEmail.textContent=user.email||'(알 수 없음)');
+        els.welcome&&(els.welcome.textContent='샬롬! 말씀읽기를 시작해볼까요?');
+        views.auth?.classList.add('hidden'); views.app?.classList.remove('hidden');
+
+        await loadBooks();
+        const first=els.bookSelect?.options?.[0]?.value;
+        if(first){ els.bookSelect.value=first; await loadChapters(first); }
+      }else{
+        state.userId=null; views.app?.classList.add('hidden'); views.auth?.classList.remove('hidden');
+      }
+    });
+  })();
+  </script>
 </body>
 </html>
