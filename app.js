@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식 + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(강화) + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -366,21 +366,198 @@
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
-  // ---------- Speech Recognition ----------
+  // ---------- Speech Recognition (강화 버전) ----------
   const getRecognition = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return null;
-    const r = new SR(); r.lang='ko-KR'; r.continuous=true; r.interimResults=true; return r;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    const r = new SR();
+    r.lang = 'ko-KR';
+    r.continuous = true;
+    r.interimResults = true;
+    // 후보 활용
+    try { r.maxAlternatives = 3; } catch(_) {}
+    return r;
   };
-  function normalize(s){ return (s||"").replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim().toLowerCase(); }
-  function matchedPrefixLen(target, spoken){ const t=normalize(target), s=normalize(spoken); if(!s) return 0; let ti=0,si=0,c=0; while(ti<t.length && si<s.length){ if(t[ti]===s[si]){c++;ti++;si++;} else {si++;} } return Math.min(c, target.length); }
-  function paintRead(prefixLen){ if(!els.verseText) return; const spans=els.verseText.childNodes; for(let i=0;i<spans.length;i++){ spans[i].classList?.toggle("read", i<prefixLen); } }
-  function onSpeechResult(evt){ const v=state.verses[state.currentVerseIdx]||""; let transcript=""; for(const res of evt.results){ transcript+=res[0].transcript+" "; } const pref=matchedPrefixLen(v, transcript); paintRead(pref); const ratio=pref/v.length; if(ratio>=0.92 && !evt.results[evt.results.length-1].isFinal){ completeVerse(); } }
-  async function completeVerse(){ stopListening(false); await incVersesRead(1); const b=getBookByKo(state.currentBookKo); const auto=els.autoAdvance?els.autoAdvance.checked:true; if(auto){ if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } else { await markChapterDone(b.id, state.currentChapter); state.myStats.last.verse=0; state.myStats.last.chapter=state.currentChapter; saveLastPosition(); alert("장 완료! 다음 장으로 이동하세요."); } } }
-  function startListening(showAlert=true){ if(state.listening) return; state.recog=getRecognition(); if(!state.recog){ els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(데스크톱 Chrome 권장)"); if(showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다."); return; } state.recog.onresult=onSpeechResult; state.recog.onend=()=>{ if(state.listening){ try{ state.recog.start(); }catch(_){} } }; try{ state.recog.start(); state.listening=true; els.btnToggleMic && (els.btnToggleMic.textContent="⏹️"); }catch(e){ alert("음성인식 시작 실패: "+e.message); } }
-  function stopListening(resetBtn=true){ if(state.recog){ try{ state.recog.onresult=null; state.recog.onend=null; state.recog.stop(); }catch(_){} } state.listening=false; if(resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️"; }
-  els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
-  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
-  els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; stopListening(false); if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); startListening(false); } });
+
+  // 정규화
+  function normalizeText(s) {
+    return (s || "")
+      .normalize("NFKC")
+      .replace(/[“”‘’"'\u200B-\u200D`´^~]/g, "")
+      .replace(/[^\p{L}\p{N} ]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  // grapheme 분해
+  const seg = (typeof Intl !== "undefined" && Intl.Segmenter)
+    ? new Intl.Segmenter("ko", { granularity: "grapheme" })
+    : null;
+
+  function toGraphemes(s) {
+    if (!s) return [];
+    if (!seg) return Array.from(s);
+    const out = [];
+    for (const g of seg.segment(s)) out.push(g.segment);
+    return out;
+  }
+
+  // 앞에서부터 맞춘 길이(서브시퀀스 기반)
+  function matchedPrefixLenBySubseq(target, spoken) {
+    const t = toGraphemes(normalizeText(target).replace(/ /g, ""));
+    const s = toGraphemes(normalizeText(spoken).replace(/ /g, ""));
+    if (!t.length || !s.length) return 0;
+    let ti = 0, si = 0;
+    while (ti < t.length && si < s.length) {
+      if (t[ti] === s[si]) { ti++; si++; }
+      else { si++; }
+    }
+    return ti;
+  }
+
+  function paintRead(prefixLen) {
+    if (!els.verseText) return;
+    const spans = els.verseText.childNodes;
+    for (let i = 0; i < spans.length; i++) {
+      spans[i].classList?.toggle("read", i < prefixLen);
+    }
+  }
+
+  let lastStablePrefix = 0;
+  let lastCompleteTs = 0;
+
+  function bestTranscriptFromEvent(evt) {
+    const cand = [];
+    for (let i = 0; i < evt.results.length; i++) {
+      const res = evt.results[i];
+      const maxAlt = Math.min(res.length, 3);
+      for (let a = 0; a < maxAlt; a++) cand.push(res[a].transcript);
+    }
+    cand.sort((a, b) => b.length - a.length);
+    return cand.slice(0, 3);
+  }
+
+  function onSpeechResult(evt) {
+    const v = state.verses[state.currentVerseIdx] || "";
+    if (!v) return;
+
+    const candidates = bestTranscriptFromEvent(evt);
+    let bestPrefix = 0;
+    for (const tr of candidates) {
+      const pref = matchedPrefixLenBySubseq(v, tr);
+      if (pref > bestPrefix) bestPrefix = pref;
+    }
+
+    paintRead(bestPrefix);
+    lastStablePrefix = Math.max(lastStablePrefix, bestPrefix);
+
+    const targetLen = toGraphemes(normalizeText(v).replace(/ /g, "")).length;
+    const ratio = targetLen ? (bestPrefix / targetLen) : 0;
+
+    // 완료 기준(절 길이에 따라 가변)
+    const minRatio = targetLen <= 25 ? 0.92 : 0.88;
+    const now = Date.now();
+    const allowComplete = (now - lastCompleteTs) > 300;
+    const isFinal = evt.results[evt.results.length - 1]?.isFinal;
+    const needFinalForShort = targetLen <= 18;
+
+    if (ratio >= minRatio && allowComplete) {
+      if (!needFinalForShort || isFinal) {
+        lastCompleteTs = now;
+        completeVerse();
+      }
+    }
+  }
+
+  async function completeVerse() {
+    stopListening(false);
+    await incVersesRead(1);
+    const b = getBookByKo(state.currentBookKo);
+    const auto = els.autoAdvance ? els.autoAdvance.checked : true;
+
+    if (auto) {
+      if (state.currentVerseIdx < state.verses.length - 1) {
+        state.currentVerseIdx++;
+        state.myStats.last.verse = state.currentVerseIdx + 1;
+        saveLastPosition();
+        updateVerseText();
+        lastStablePrefix = 0;
+        startListening(false);
+      } else {
+        await markChapterDone(b.id, state.currentChapter);
+        state.myStats.last.verse = 0;
+        state.myStats.last.chapter = state.currentChapter;
+        saveLastPosition();
+        alert("장 완료! 다음 장으로 이동하세요.");
+      }
+    }
+  }
+
+  function startListening(showAlert = true) {
+    if (state.listening) return;
+    state.recog = getRecognition();
+    if (!state.recog) {
+      els.listenHint && (els.listenHint.innerHTML = "⚠️ 음성인식 미지원(데스크톱 Chrome 권장)");
+      if (showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다.");
+      return;
+    }
+    lastStablePrefix = 0;
+    state.recog.onresult = onSpeechResult;
+    state.recog.onend = () => {
+      if (state.listening) {
+        try { state.recog.start(); } catch (_) {}
+      }
+    };
+    try {
+      state.recog.start();
+      state.listening = true;
+      els.btnToggleMic && (els.btnToggleMic.textContent = "⏹️");
+    } catch (e) {
+      alert("음성인식 시작 실패: " + e.message);
+    }
+  }
+
+  function stopListening(resetBtn = true) {
+    if (state.recog) {
+      try {
+        state.recog.onresult = null;
+        state.recog.onend = null;
+        state.recog.stop();
+      } catch (_) {}
+    }
+    state.listening = false;
+    if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent = "🎙️";
+  }
+
+  els.btnToggleMic?.addEventListener("click", () => {
+    if (!state.listening) startListening();
+    else stopListening();
+  });
+  els.btnNextVerse?.addEventListener("click", () => {
+    if (!state.verses.length) return;
+    stopListening(false);
+    if (state.currentVerseIdx < state.verses.length - 1) {
+      state.currentVerseIdx++;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      lastStablePrefix = 0;
+      startListening(false);
+    }
+  });
+  els.btnPrevVerse?.addEventListener("click", () => {
+    if (!state.verses.length) return;
+    stopListening(false);
+    if (state.currentVerseIdx > 0) {
+      state.currentVerseIdx--;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      lastStablePrefix = 0;
+      startListening(false);
+    }
+  });
 
   // ---------- Leaderboard (닉네임 > 이메일앞부분) ----------
   async function loadLeaderboard() {
