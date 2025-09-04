@@ -229,8 +229,7 @@
       try {
         await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
           .set({ readChapters: Array.from(state.progress[bookId].readChapters) }, { merge: true });
-        await db.collection("users").doc(u
-ser.uid)
+        await db.collection("users").doc(user.uid)
           .set({ chaptersRead: firebase.firestore.FieldValue.increment(1),
                  updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
         state.myStats.chaptersRead += 1;
