@@ -3,6 +3,11 @@
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
 (() => {
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 마이크레벨 + 진도저장
+   - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
+   - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
+*/
+(() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
@@ -249,15 +254,7 @@
       try {
         await db.collection("users").doc(user.uid)
           .set({ versesRead: firebase.firestore.FieldValue.increment(n),
-                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-      } catch (e) {}
-    }
-  }
-
-  // ---------- Book / Chapter / Verse ----------
-  function clearAppUI() {
-    els.bookSelect && (els.bookSelect.innerHTML = "");
-    els.chapterGrid && (els.chapterGrid.innerHTML = "");
+                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { 
     els.verseGrid && (els.verseGrid.innerHTML = "");
     els.verseText && (els.verseText.textContent = "로그인 후 시작하세요.");
     els.leaderList && (els.leaderList.innerHTML = "");
@@ -267,7 +264,7 @@
     state.currentBookKo = null; state.currentChapter = null; state.verses = []; state.currentVerseIdx = 0;
   }
 
-  function buildBookSelect() {
+  function buildBookSelect() 
     if (!els.bookSelect) return;
     els.bookSelect.innerHTML = "";
     for (const b of BOOKS) {
@@ -377,11 +374,11 @@
   };
 
   // 모드 프로파일 (빠름/보통/느긋함) — 느긋함만 살짝 완화
-  const RECOG_PROFILES = {
-    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
-    normal: { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:500, cooldownMs:700, postAdvanceDelayMs:400 },
-    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.86, minRatioMedium:0.84, minRatioLong:0.80, holdMs:550, cooldownMs:750, postAdvanceDelayMs:500 }
-  };
+const RECOG_PROFILES = {
+  fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
+  normal: { shortLen:30, mediumLen:60, minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84, holdMs:480, cooldownMs:650, postAdvanceDelayMs:400 },
+  lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76, holdMs:520, cooldownMs:700, postAdvanceDelayMs:500 }
+};
   let MATCH_PROFILE = RECOG_PROFILES.normal;
 
   // final 유예: final이 늦어도 충분히 안정되면 통과
