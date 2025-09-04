@@ -3,11 +3,6 @@
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
 (() => {
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 마이크레벨 + 진도저장
-   - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
-   - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
-*/
-(() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
@@ -253,8 +248,18 @@
     if (db && user) {
       try {
         await db.collection("users").doc(user.uid)
-          .set({ versesRead: firebase.firestore.FieldValue.increment(n),
-                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { 
+          .set({
+            versesRead: firebase.firestore.FieldValue.increment(n),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+      } catch (e) {}
+    }
+  }
+
+  // ---------- Book / Chapter / Verse ----------
+  function clearAppUI() {
+    els.bookSelect && (els.bookSelect.innerHTML = "");
+    els.chapterGrid && (els.chapterGrid.innerHTML = "");
     els.verseGrid && (els.verseGrid.innerHTML = "");
     els.verseText && (els.verseText.textContent = "로그인 후 시작하세요.");
     els.leaderList && (els.leaderList.innerHTML = "");
@@ -264,7 +269,7 @@
     state.currentBookKo = null; state.currentChapter = null; state.verses = []; state.currentVerseIdx = 0;
   }
 
-  function buildBookSelect() 
+  function buildBookSelect() {
     if (!els.bookSelect) return;
     els.bookSelect.innerHTML = "";
     for (const b of BOOKS) {
@@ -361,30 +366,30 @@
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
-  // ---------- Speech Recognition (v3-stable: 연속매칭 + final필수 + 임계강화) ----------
+  // ---------- Speech Recognition (v3-stable: 관대한 연속매칭 + final 유예) ----------
   const getRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     const r = new SR();
     r.lang = 'ko-KR';
     r.continuous = true;
-    r.interimResults = true; // 중간은 보지만, 완료 체크는 final에서만
+    r.interimResults = true;
     try { r.maxAlternatives = 3; } catch(_) {}
     return r;
   };
 
-  // 모드 프로파일 (빠름/보통/느긋함) — 느긋함만 살짝 완화
-const RECOG_PROFILES = {
-  fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
-  normal: { shortLen:30, mediumLen:60, minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84, holdMs:480, cooldownMs:650, postAdvanceDelayMs:400 },
-  lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76, holdMs:520, cooldownMs:700, postAdvanceDelayMs:500 }
-};
+  // 모드 프로파일 (조정된 임계값)
+  const RECOG_PROFILES = {
+    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
+    normal: { shortLen:30, mediumLen:60, minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84, holdMs:480, cooldownMs:650, postAdvanceDelayMs:400 },
+    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76, holdMs:520, cooldownMs:700, postAdvanceDelayMs:500 }
+  };
   let MATCH_PROFILE = RECOG_PROFILES.normal;
 
-  // final 유예: final이 늦어도 충분히 안정되면 통과
+  // final 유예
   const FINAL_GRACE_MS = 1200;
 
-  // 라디오 → 프로파일 변경
+  // 라디오 → 프로파일 변경 (index.html에 라디오가 있을 때)
   document.querySelectorAll("input[name=recogMode]")?.forEach(radio=>{
     radio.addEventListener("change", ()=>{
       const val = document.querySelector("input[name=recogMode]:checked")?.value || "normal";
@@ -446,9 +451,9 @@ const RECOG_PROFILES = {
       .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
   }
 
-  // v3: 불용어 제거는 OFF, 발음 보정은 ON
+  // 불용어 제거 OFF, 발음 보정 ON
   const USE_STOPWORD_STRIP = false;
-  const USE_PRONUN_HEUR   = true;  // '의'≈'에' 등 한국어 발음 보정 적용
+  const USE_PRONUN_HEUR   = true;  // '의'≈'에' 보정
   const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
   const pronunciationHeuristics = s => s.replace(/의/g,"에");
 
@@ -467,27 +472,7 @@ const RECOG_PROFILES = {
     return t;
   }
 
-  // 타이트한 연속(prefix) 매칭 (기존)
-  function matchedPrefixLenContiguous(targetJamo, spokenJamo){
-    if (!targetJamo || !spokenJamo) return 0;
-    let best = 0;
-    const maxShift = Math.min(5, Math.max(0, spokenJamo.length-1));
-    for (let shift = 0; shift <= maxShift; shift++){
-      let ti = 0, si = shift, cur = 0;
-      while (ti < targetJamo.length && si < spokenJamo.length){
-        if (targetJamo[ti] !== spokenJamo[si]) break;
-        cur++; ti++; si++;
-      }
-      if (cur > best) best = cur;
-      if (best >= targetJamo.length) break;
-    }
-    return best;
-  }
-
-  /* 관대한 연속 매칭:
-     - 첫 글자부터 이어서 읽되, 일정 간격마다 1~2글자 실수/누락 허용
-     - 길이에 비례해 허용오류 수 자동 설정
-  */
+  // 관대한 연속(prefix) 매칭
   function softPrefixProgress(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
 
@@ -556,7 +541,7 @@ const RECOG_PROFILES = {
       (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
                                        MATCH_PROFILE.minRatioLong;
 
-    // <<< 관대한 매칭 사용
+    // 관대한 매칭 사용
     let best = { chars:0, ratio:0 };
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
@@ -602,17 +587,14 @@ const RECOG_PROFILES = {
   }
 
   async function completeVerseWithProfile(){
-    // 카운트 업데이트
     await incVersesRead(1);
 
     const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
     const b = getBookByKo(state.currentBookKo);
 
-    // 완료 후 잠깐 숨고르기
     await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
 
     if (auto) {
-      // onend 자동재시작이 끼어들지 않도록 억제 후 정지
       state.suppressAutoRestart = true;
       stopListening(false);
 
@@ -623,15 +605,12 @@ const RECOG_PROFILES = {
         state.myStats.last.chapter = state.currentChapter;
         saveLastPosition();
         alert("장 완료! 다음 장으로 이동하세요.");
-        state.suppressAutoRestart = false; // 해제
+        state.suppressAutoRestart = false;
         return;
       }
 
-      // 매칭 상태 초기화
       stableSince = 0; lastPrefix = 0;
-
-      // 음성인식 완전 재기동
-      await hardRestartRecognition(250); // 200~400 사이에서 환경 맞게 조절 가능
+      await hardRestartRecognition(250);
     }
   }
 
@@ -647,7 +626,6 @@ const RECOG_PROFILES = {
 
     state.recog.onresult = onSpeechResult;
 
-    // onend 자동 재시작: 억제 가드가 꺼져 있고, listening=true일 때만
     state.recog.onend = () => {
       if (state.listening && !state.suppressAutoRestart) {
         try { state.recog.start(); } catch(_) {}
