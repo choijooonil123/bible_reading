@@ -1,215 +1,169 @@
-/* ---------- Base ---------- */
-body, html {
+/* ===========================
+   말씀읽기APP styles.css (청색 테마)
+   =========================== */
+:root {
+  --bg: #0b1020;        /* 전체 배경 가장 진한 남색 */
+  --bg-soft: #10183a;   /* 카드/패널 배경 */
+  --ink: #eaf0ff;       /* 기본 글자색 */
+  --muted: #a7b3d4;     /* 보조 글자색 */
+  --brand: #4d79ff;     /* 메인 포인트 - 파랑 */
+  --accent: #6aa6ff;    /* 강조 포인트 - 하늘색 */
+  --ok: #3ec8a8;        /* 성공 - 청록 */
+  --danger: #ff6a6a;    /* 경고 */
+}
+
+html, body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, sans-serif;
-  background: #f8f9fb;
-  color: #222;
+  font-family: ui-sans-serif, system-ui, Apple SD Gothic Neo, Noto Sans KR, Segoe UI, Roboto, sans-serif;
+  background: linear-gradient(180deg, #0b1020 0%, #10183a 50%, #0e1432 100%);
+  color: var(--ink);
+  min-height: 100%;
 }
 
+/* 화면 섹션 */
 .screen { display: none; }
 .screen.show { display: block; }
-.hidden { display: none !important; }
 
-.container {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 12px;
-}
-.card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.08);
-}
-.appbar {
+.hero {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #10183a;
-  color: #fff;
-  padding: 8px 12px;
+  justify-content: center;
+  min-height: 100vh;
 }
-.appbar .brand { font-size: 1.1rem; font-weight: bold; }
-.appbar .actions { margin-left: auto; margin-right: 12px; }
 
-/* ---------- Buttons ---------- */
-.btn {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  background: #f1f1f1;
-  cursor: pointer;
+.login-card {
+  background: var(--bg-soft);
+  border-radius: 16px;
+  padding: 24px;
+  width: 320px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
-.btn.primary { background: #2b6fff; color: #fff; border-color: #2b6fff; }
-.btn.danger  { background: #d93636; color: #fff; border-color: #d93636; }
-.btn.small   { font-size: 0.8rem; padding: 4px 8px; }
-.btn.fill    { flex: 1; }
-.btn:disabled { opacity: .6; cursor: not-allowed; }
 
-/* ---------- Inputs ---------- */
-.input, .select {
+.login-head {
+  text-align: center;
+  margin-bottom: 20px;
+}
+.logo-hero { font-size: 2.5rem; }
+.login-head h1 { margin: 8px 0 4px; }
+.login-head p { color: var(--muted); font-size: 0.9rem; }
+
+.login-body label { display: block; margin-top: 12px; }
+.input {
   width: 100%;
   padding: 8px;
-  border: 1px solid #bbb;
-  border-radius: 6px;
-  font-size: 1rem;
+  border-radius: 8px;
+  border: 1px solid #2c335f;
+  background: #0e1432;
+  color: var(--ink);
 }
-.form-label { font-size: 0.85rem; display: block; margin-bottom: 4px; }
+.input:focus { outline: 2px solid var(--brand); }
+
+.btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn.primary { background: var(--brand); color: #fff; }
+.btn.danger  { background: var(--danger); color: #fff; }
+.btn.fill    { flex: 1; }
+.btn.small   { font-size: 0.8rem; padding: 4px 8px; }
+
+.row { display: flex; align-items: center; }
+.row.between { justify-content: space-between; }
+
+.muted { color: var(--muted); }
 .mt12 { margin-top: 12px; }
 .mt16 { margin-top: 16px; }
 
-/* ---------- Login ---------- */
-.hero {
+/* 앱 화면 */
+.appbar {
+  background: var(--bg-soft);
   display: flex;
-  justify-content: center;
   align-items: center;
-  height: 100vh;
-}
-.login-card {
-  background: #fff;
-  padding: 20px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 400px;
-  box-shadow: 0 3px 8px rgba(0,0,0,.1);
-}
-.logo-hero { font-size: 2rem; }
-.muted { color: #666; font-size: 0.9rem; }
-.sm { font-size: 0.8rem; }
-
-/* ---------- Reader ---------- */
-.reader-head {
-  display: flex;
   justify-content: space-between;
-  margin-bottom: 8px;
+  padding: 8px 12px;
 }
-.loc { font-weight: 600; font-size: 1.05rem; }
-.verse-container {
+.brand { font-weight: bold; }
+.logo { margin-right: 6px; }
+.userbox { display: flex; align-items: center; gap: 6px; }
+.avatar { width: 28px; height: 28px; border-radius: 50%; }
+
+.container {
   padding: 12px;
-  border-radius: 8px;
-  background: #fdfdfd;
-  border: 1px solid #ddd;
-  min-height: 80px;
-}
-.verse-text {
-  font-size: 1.1rem;
-  line-height: 1.6;
-  word-wrap: break-word;
 }
 
-/* ---------- Grid Buttons ---------- */
-.grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.grid.small { gap: 4px; }
+.card {
+  background: var(--bg-soft);
+  border-radius: 12px;
+  padding: 12px;
+  margin-top: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 6px;
+}
+.grid.small { grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); }
+
 .chip {
-  border: 1px solid #bbb;
+  padding: 6px;
   border-radius: 6px;
-  padding: 4px 8px;
-  background: #fafafa;
+  background: #1a2650;
+  color: var(--ink);
+  text-align: center;
   cursor: pointer;
-  font-size: 0.9rem;
 }
-.chip.active {
-  border-color:#2b6fff;
-  background: rgba(43,111,255,.08);
-  color:#2b6fff;
-}
-.chip.done {
-  border-color:#43d17a;
-  background: rgba(67,209,122,.22);
-  color:#115b37;
-}
+.chip.active { background: var(--brand); }
+.chip.done   { background: var(--ok); }
 
-/* ---------- FAB ---------- */
+.reader-head { display: flex; justify-content: space-between; }
+.loc { font-weight: 600; }
+.verse-container {
+  background: #0e1432;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.verse-text span.read { background: rgba(77,121,255,0.4); }
+
+.stats { margin-top: 8px; }
+
+/* FAB */
 .fab-col {
   position: fixed;
   right: 16px;
   bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .fab {
-  width: 52px;
-  height: 52px;
+  width: 48px; height: 48px;
   border-radius: 50%;
-  font-size: 1.5rem;
   border: none;
-  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  font-size: 1.2rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  background: var(--brand);
+  color: #fff;
   cursor: pointer;
 }
-.fab.primary { background: #2b6fff; color: #fff; }
+.fab.primary { background: var(--accent); }
 
-/* ---------- Modal ---------- */
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 99;
-}
+/* 모달 */
 .modal.hidden { display: none; }
+.modal.show { display: flex; align-items: center; justify-content: center; position: fixed; inset:0; background: rgba(0,0,0,0.6); }
 .modal-body {
-  background: #fff;
-  padding: 20px;
+  background: var(--bg-soft);
   border-radius: 12px;
-  max-width: 90%;
+  padding: 16px;
   max-height: 90%;
   overflow: auto;
 }
-.modal-body.full {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-}
-
-/* ---------- Matrix ---------- */
-.matrix { border-collapse: collapse; font-size: 0.75rem; }
-.matrix th, .matrix td {
-  border: 1px solid #ccc;
-  padding: 2px 4px;
-  text-align: center;
-  min-width: 20px;
-}
-.matrix th.book {
-  background: #f1f1f1;
-  position: sticky;
-  left: 0;
-}
-.matrix td[style*="rgba(67,209,122"] {
-  box-shadow: inset 0 0 0 1px rgba(67,209,122,.35);
-}
-
-/* ---------- Stats ---------- */
-.stats { margin-top: 8px; font-size: 0.9rem; color: #444; }
-
-/* ===================================================== */
-/* === 최소 변경: 요청하신 표시만 추가 (디자인 그대로) === */
-/* ===================================================== */
-
-/* 1) 어절 하이라이트 */
-.word.read {
-  background: linear-gradient(transparent 70%, rgba(16,24,58,0.10) 0);
-  transition: background .12s ease;
-}
-
-/* 2) 절 버튼 완료 표시 */
-.grid.small .chip.done {
-  background: rgba(16,24,58,0.08);
-  border-color: rgba(16,24,58,0.25);
-}
-
-/* 3) 장 버튼 완독 표시 */
-.grid .chip.done {
-  background: rgba(16,24,58,0.08);
-  border-color: rgba(16,24,58,0.25);
-}
-
-/* === 배경만 청색계열로 (최소 변경) === */
-html, body {
-  background: linear-gradient(180deg, #0f1e4d 0%, #0b1742 55%, #081235 100%) !important;
-  /* 텍스트/컴포넌트 색은 기존 스타일을 그대로 사용 */
-}
+.matrix-wrap { overflow-x: auto; }
+.matrix th.book { text-align: left; }
+.matrix td { width: 20px; height: 20px; }
