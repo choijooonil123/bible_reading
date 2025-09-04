@@ -1,7 +1,6 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json
-   - 어절단위 음성매칭(초-관대)
-   - Mic은 버튼으로만 ON/OFF (자동 재시작 없음)
-   - 절 완료 시 VerseGrid 버튼에 done 표시, 장 완료 시 ChapterGrid done 표시 유지
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3, 버튼전용ON/OFF)
+   - 자동이동 시 SR 건드리지 않음, 마이크 ON 동안 모드/튜닝 변경 금지
+   - 가중 접두 정렬(밴디드 DP) + 옵션화(SUB_NEAR/SUB_DIST/DEL_COST/INS_COST) + 튜닝 패널
 */
 (() => {
   // ---------- PWA ----------
@@ -18,6 +17,7 @@
   function initFirebase() {
     if (!window.firebaseConfig || typeof firebase === "undefined") {
       console.error("[Firebase] SDK/config 누락");
+      alert("Firebase 설정이 로드되지 않았습니다. firebaseConfig.js를 확인하세요.");
       return;
     }
     firebase.initializeApp(window.firebaseConfig);
@@ -75,6 +75,13 @@
     btnToggleMic: document.getElementById("btnToggleMic"),
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
+
+    // (선택) 모드 라디오
+    modeRadios: Array.from(document.querySelectorAll("input[name=recogMode]")),
+
+    // (선택) 마이크 레벨 UI
+    micBar: document.getElementById("micBar"),
+    micDb: document.getElementById("micDb"),
   };
 
   // ---------- State ----------
@@ -82,10 +89,8 @@
   const getBookByKo = (ko) => BOOKS.find(b => b.ko === ko);
   const state = {
     bible: null, currentBookKo: null, currentChapter: null,
-    verses: [], currentVerseIdx: 0,
-    listening:false, recog:null,
+    verses: [], currentVerseIdx: 0, listening:false, recog:null,
     progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
-    completedVerses: new Set(),     // 현재 장 내에서 완료된 절들(번호)
   };
 
   // ---------- bible.json ----------
@@ -124,7 +129,8 @@
   }
 
   // ---------- 회원가입 / 로그인 / 로그아웃 ----------
-  els.btnSignup?.addEventListener("click", () => withBusy(els.btnSignup, async () => {
+  els.btnSignup?.addEventListener("click", (e) => withBusy(els.btnSignup, async () => {
+    e?.preventDefault(); e?.stopPropagation();
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
     const name  = (els.displayName.value || "").trim();
@@ -142,7 +148,8 @@
     }
   }));
 
-  els.btnLogin?.addEventListener("click", () => withBusy(els.btnLogin, async () => {
+  els.btnLogin?.addEventListener("click", (e) => withBusy(els.btnLogin, async () => {
+    e?.preventDefault(); e?.stopPropagation();
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
     const name  = (els.displayName.value || "").trim();
@@ -250,8 +257,10 @@
     if (db && user) {
       try {
         await db.collection("users").doc(user.uid)
-          .set({ versesRead: firebase.firestore.FieldValue.increment(n),
-                 updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+          .set({
+            versesRead: firebase.firestore.FieldValue.increment(n),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
       } catch (e) {}
     }
   }
@@ -267,7 +276,6 @@
     els.locLabel && (els.locLabel.textContent = "");
     els.verseCount && (els.verseCount.textContent = "");
     state.currentBookKo = null; state.currentChapter = null; state.verses = []; state.currentVerseIdx = 0;
-    state.completedVerses.clear();
   }
 
   function buildBookSelect() {
@@ -298,9 +306,7 @@
   els.bookSelect?.addEventListener("change", () => {
     state.currentBookKo = els.bookSelect.value;
     state.currentChapter = null; state.verses = []; state.currentVerseIdx = 0;
-    state.completedVerses.clear();
-    els.verseGrid && (els.verseGrid.innerHTML = "");
-    els.verseText && (els.verseText.textContent = "장과 절을 선택하세요.");
+    els.verseGrid && (els.verseGrid.innerHTML = ""); els.verseText && (els.verseText.textContent = "장과 절을 선택하세요.");
     buildChapterGrid();
     state.myStats.last = { bookKo: state.currentBookKo, chapter: null, verse: 0 }; saveLastPosition();
   });
@@ -324,21 +330,18 @@
     els.verseGrid.innerHTML = "";
     for (let i = 1; i <= state.verses.length; i++) {
       const btn = document.createElement("button");
-      btn.className = "chip";
-      if (state.completedVerses.has(i)) btn.classList.add("done"); // 완료 색상
-      if (state.currentVerseIdx === i - 1) btn.classList.add("active"); // 현재 절 색상
-      btn.textContent = i;
+      btn.className = "chip"; btn.textContent = i;
       btn.addEventListener("click", () => {
         state.currentVerseIdx = i - 1; updateVerseText();
         state.myStats.last.verse = i; saveLastPosition();
       });
+      if (state.currentVerseIdx === i - 1) btn.classList.add("active");
       els.verseGrid.appendChild(btn);
     }
   }
 
   async function selectChapter(chapter) {
     state.currentChapter = chapter; state.currentVerseIdx = 0;
-    state.completedVerses.clear(); // 장 변경 시 절 완료표시 초기화
     const b = getBookByKo(state.currentBookKo);
     els.locLabel && (els.locLabel.textContent = `${b?.ko || ""} ${chapter}장`);
     els.verseText && (els.verseText.textContent = "로딩 중…");
@@ -358,49 +361,28 @@
     state.myStats.last = { bookKo: b.ko, chapter, verse: 1 }; saveLastPosition();
   }
 
-  // ---------- 어절 렌더링 ----------
-  let eojeols = [];
-  let prefixLensByWord = [];
-  let paintedWordIdx = -1;
-  let ignoreUntilTs = 0;      // 자동이동/절 변경 직후 잔여 인식 무시
-
-  function splitToEojeols(str){
-    const raw = (str||"").replace(/\s+/g, " ").trim();
-    return raw.length ? raw.split(" ") : [];
-  }
-
-  function rebuildVerseAsWords(){
-    const v = state.verses[state.currentVerseIdx] || "";
-    const words = splitToEojeols(v);
-    eojeols = words.map(w => ({ text: w, jamo: normalizeToJamo(w, false) }));
-    prefixLensByWord = [];
-    let acc = 0;
-    for (const w of eojeols) { acc += w.jamo.length; prefixLensByWord.push(acc); }
-
-    if (els.verseText) {
-      els.verseText.innerHTML = "";
-      words.forEach((w, idx) => {
-        const span = document.createElement("span");
-        span.className = "word";
-        span.textContent = w + (idx < words.length - 1 ? " " : "");
-        els.verseText.appendChild(span);
-      });
-    }
-    paintedWordIdx = -1;
-  }
-
+  // ---------- 표시 업데이트 ----------
+  let paintedPrefix = 0;
   function updateVerseText() {
     const v = state.verses[state.currentVerseIdx] || "";
+    paintedPrefix = 0;
     els.locLabel && (els.locLabel.textContent =
       `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx + 1}절`);
-    rebuildVerseAsWords();
+    if (els.verseText) {
+      els.verseText.innerHTML = "";
+      for (let i = 0; i < v.length; i++) { const s=document.createElement("span"); s.textContent=v[i]; els.verseText.appendChild(s); }
+    }
     els.verseCount && (els.verseCount.textContent =
       `(${state.verses.length}절 중 ${state.currentVerseIdx + 1}절)`);
-    if (els.verseGrid) {
-      [...els.verseGrid.children].forEach((btn, idx) => {
-        btn.classList.toggle("active", idx===state.currentVerseIdx);
-        btn.classList.toggle("done", state.completedVerses.has(idx+1));
-      });
+    if (els.verseGrid) { [...els.verseGrid.children].forEach((btn, idx) =>
+      btn.classList.toggle("active", idx===state.currentVerseIdx)); }
+  }
+
+  function paintRead(prefixLen){
+    if (!els.verseText) return;
+    const spans = els.verseText.childNodes;
+    for (let i=0;i<spans.length;i++){
+      spans[i].classList?.toggle("read", i<prefixLen);
     }
   }
 
@@ -412,11 +394,11 @@
     r.lang = 'ko-KR';
     r.continuous = true;
     r.interimResults = true;
-    try { r.maxAlternatives = 5; } catch(_) {}
+    try { r.maxAlternatives = 3; } catch(_) {}
     return r;
   };
 
-  // 모바일 환경 가드 & 워밍업
+  // 환경 가드
   const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
   const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
   const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
@@ -437,7 +419,52 @@
     micPrimed=true;
   }
 
-  // 정규화/자모
+  // ---- 프로파일(모드) & 비용옵션
+  const RECOG_PROFILES = {
+    fast: {
+      shortLen:30, mediumLen:60,
+      minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90,
+      holdMs:400, cooldownMs:600, postAdvanceDelayMs:300,
+      SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55
+    },
+    normal: {
+      shortLen:30, mediumLen:60,
+      minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84,
+      holdMs:480, cooldownMs:650, postAdvanceDelayMs:400,
+      SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55
+    },
+    lenient: {
+      shortLen:30, mediumLen:60,
+      minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76,
+      holdMs:520, cooldownMs:700, postAdvanceDelayMs:500,
+      SUB_NEAR:0.28, SUB_DIST:0.85, DEL_COST:0.45, INS_COST:0.45
+    }
+  };
+  let currentMode = (document.querySelector("input[name=recogMode]:checked")?.value) || "normal";
+  let MATCH_PROFILE = RECOG_PROFILES[currentMode];
+  const FINAL_GRACE_MS = 1200;
+
+  function applyModeFromUI() {
+    currentMode = document.querySelector("input[name=recogMode]:checked")?.value || currentMode;
+    MATCH_PROFILE = RECOG_PROFILES[currentMode] || RECOG_PROFILES.normal;
+    console.log("[RecogMode] 변경:", currentMode, MATCH_PROFILE);
+  }
+  function setModeRadiosDisabled(disabled){
+    (els.modeRadios||[]).forEach(r => r.disabled = disabled);
+  }
+  (els.modeRadios||[]).forEach(radio=>{
+    radio.addEventListener("change", ()=>{
+      if (state.listening) {
+        (els.modeRadios||[]).forEach(r => { r.checked = (r.value === currentMode); });
+        alert("마이크가 켜져있는 동안에는 음성모드를 바꿀 수 없습니다.");
+        return;
+      }
+      applyModeFromUI();
+      if (window.__renderTuningPlaceholders) window.__renderTuningPlaceholders(); // 튜닝 패널 placeholder 갱신
+    });
+  });
+
+  // ---- 한글 자모 유틸
   const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
   const JUNG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
   const JONG = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
@@ -457,95 +484,189 @@
     }
     return out.join("");
   }
+  const NUM_KO = {"영":0,"공":0,"하나":1,"한":1,"둘":2,"두":2,"셋":3,"세":3,"넷":4,"네":4,"다섯":5,"여섯":6,"일곱":7,"여덟":8,"아홉":9,"열":10};
+  function normalizeKoreanNumbers(s){
+    return s
+      .replace(/(열|한\s*십|일\s*십)/g,"십")
+      .replace(/(한|일)\s*십/g,"십")
+      .replace(/(둘|이)\s*십/g,"이십")
+      .replace(/(셋|삼)\s*십/g,"삼십")
+      .replace(/(넷|사)\s*십/g,"사십")
+      .replace(/(다섯|오)\s*십/g,"오십")
+      .replace(/(여섯|육)\s*십/g,"육십")
+      .replace(/(일곱|칠)\s*십/g,"칠십")
+      .replace(/(여덟|팔)\s*십/g,"팔십")
+      .replace(/(아홉|구)\s*십/g,"구십")
+      .replace(/십\s*(한|일)/g,"11").replace(/십\s*(둘|이)/g,"12")
+      .replace(/십\s*(셋|삼)/g,"13").replace(/십\s*(넷|사)/g,"14")
+      .replace(/십\s*(다섯|오)/g,"15").replace(/십\s*(여섯|육)/g,"16")
+      .replace(/십\s*(일곱|칠)/g,"17").replace(/십\s*(여덟|팔)/g,"18")
+      .replace(/십\s*(아홉|구)/g,"19")
+      .replace(/^\s*십\s*$/g,"10")
+      .replace(/(이|둘)\s*십\s*(\d{1})?/g,(_,__,y)=>"2"+(y?y:"0"))
+      .replace(/(삼|셋)\s*십\s*(\d{1})?/g,(_,__,y)=>"3"+(y?y:"0"))
+      .replace(/(사|넷)\s*십\s*(\d{1})?/g,(_,__,y)=>"4"+(y?y:"0"))
+      .replace(/(오|다섯)\s*십\s*(\d{1})?/g,(_,__,y)=>"5"+(y?y:"0"))
+      .replace(/(육|여섯)\s*십\s*(\d{1})?/g,(_,__,y)=>"6"+(y?y:"0"))
+      .replace(/(칠|일곱)\s*십\s*(\d{1})?/g,(_,__,y)=>"7"+(y?y:"0"))
+      .replace(/(팔|여덟)\s*십\s*(\d{1})?/g,(_,__,y)=>"8"+(y?y:"0"))
+      .replace(/(구|아홉)\s*십\s*(\d{1})?/g,(_,__,y)=>"9"+(y?y:"0"))
+      .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
+  }
+  const USE_STOPWORD_STRIP = false;
+  const USE_PRONUN_HEUR   = true;
+  const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
   const pronunciationHeuristics = s => s.replace(/의/g,"에");
   function normalizeToJamo(s, forSpoken=false){
     let t = (s||"").normalize("NFKC").replace(/[“”‘’"'\u200B-\u200D`´^~]/g,"").toLowerCase();
-    if (forSpoken) t = pronunciationHeuristics(t);
+    t = normalizeKoreanNumbers(t);
+    if (USE_STOPWORD_STRIP) t = t.replace(STOPWORDS," ");
+    if (forSpoken && USE_PRONUN_HEUR) t = pronunciationHeuristics(t);
     t = t.replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim();
     t = decomposeJamo(t).replace(/\s+/g,"");
     return t;
   }
 
-  // ----- 어절 단위 매칭(매우 관대) -----
-  // 절 전체 자모열 targetJ, 발화 spokenJ -> 앞에서부터 관대한 매칭 길이(자모 수)
-  function softPrefixJamo(targetJ, spokenJ){
-    if (!targetJ || !spokenJ) return 0;
-    let ti=0, si=0, matched=0, errors=0, skips=0;
-    const L = targetJ.length;
-    // ★ 매우 관대: 8자마다 1오류, 최대 7까지 / 18자마다 1스킵, 최대 5까지
-    const MAX_ERR   = Math.min(7, Math.floor(L/8)+1);
-    const MAX_SKIPS = Math.min(5, Math.floor(L/18)+1);
-    while (ti<L && si<spokenJ.length){
-      if (targetJ[ti] === spokenJ[si]) { ti++; si++; matched++; continue; }
-      if (errors < MAX_ERR){ errors++; ti++; si++; matched++; continue; }
-      if (skips < MAX_SKIPS && si+1<spokenJ.length && targetJ[ti]===spokenJ[si+1]) { si++; skips++; continue; }
-      if (skips < MAX_SKIPS && ti+1<L && targetJ[ti+1]===spokenJ[si]) { ti++; skips++; matched++; continue; }
-      break;
+  // ---- 알고리즘: (1) 관대한 접두 정렬(옵션 지원)
+  function softPrefixProgress(targetJamo, spokenJamo, opts={}) {
+    if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
+
+    const SUB_NEAR = opts.SUB_NEAR ?? 0.35;
+    const SUB_DIST = opts.SUB_DIST ?? 1.0;
+    const DEL_COST = opts.DEL_COST ?? 0.55;
+    const INS_COST = opts.INS_COST ?? 0.55;
+
+    const equivPairs = [
+      ["ㅐ","ㅔ"], ["ㅚ","ㅙ"], ["ㅚ","ㅞ"], ["ㅙ","ㅞ"], ["ㅢ","ㅣ"],
+      ["ㅓ","ㅗ"], ["ㅕ","ㅛ"], ["ㅠ","ㅡ"],
+      ["ㄴ","ㅇ"], ["ㅂ","ㅍ"], ["ㅂ","ㅁ"], ["ㄷ","ㅌ"], ["ㅅ","ㅆ"],
+      ["ㅎ",""], ["","ㅎ"]
+    ];
+    const NEAR = new Map();
+    for (const [a,b] of equivPairs) { NEAR.set(`${a},${b}`,1); NEAR.set(`${b},${a}`,1); }
+    const near = (a,b) => a===b || NEAR.has(`${a},${b}`);
+    const subCost = (a,b) => (a===b ? 0 : (near(a,b) ? SUB_NEAR : SUB_DIST));
+
+    const T = targetJamo, S = spokenJamo;
+    const n = T.length,  m = S.length;
+
+    const BAND = Math.min(10, Math.max(6, Math.floor(Math.max(n,m)/10)));
+
+    let prev = new Float32Array(m+1);
+    let curr = new Float32Array(m+1);
+    for (let j=0;j<=m;j++) prev[j] = j*INS_COST;
+
+    let bestI = 0, bestScore = -Infinity;
+
+    for (let i=1;i<=n;i++){
+      const jStart = Math.max(1, i-BAND);
+      const jEnd   = Math.min(m, i+BAND);
+
+      curr[0] = i*DEL_COST;
+      for (let j=1;j<=m;j++){
+        if (j<jStart || j>jEnd) { curr[j] = 1e9; continue; }
+        const costSub = prev[j-1] + subCost(T[i-1], S[j-1]);
+        const costDel = prev[j]   + DEL_COST;
+        const costIns = curr[j-1] + INS_COST;
+        curr[j] = Math.min(costSub, costDel, costIns);
+      }
+
+      let rowMin = Infinity;
+      for (let j=jStart;j<=jEnd;j++) rowMin = Math.min(rowMin, curr[j]);
+
+      const score = i - rowMin*0.6;
+      if (score > bestScore){ bestScore = score; bestI = i; }
+
+      const tmp = prev; prev = curr; curr = tmp;
     }
-    return matched;
+
+    const matched = Math.max(0, Math.min(n, bestI));
+    const ratio = n ? matched / n : 0;
+    return { chars: matched, ratio };
   }
 
-  function coveredToWordIdx(coveredJamo){
-    let idx = -1;
-    for (let i=0;i<prefixLensByWord.length;i++){
-      if (coveredJamo >= prefixLensByWord[i]) idx = i; else break;
+  // (2) 엄격 접두(표시 단계: 앞서가지 않게)
+  function matchedPrefixLenContiguous(targetJamo, spokenJamo){
+    if (!targetJamo || !spokenJamo) return 0;
+    let best=0;
+    const maxShift = Math.min(5, Math.max(0, spokenJamo.length-1));
+    for (let shift=0; shift<=maxShift; shift++){
+      let ti=0, si=shift, cur=0;
+      while (ti<targetJamo.length && si<spokenJamo.length){
+        if (targetJamo[ti] !== spokenJamo[si]) break;
+        cur++; ti++; si++;
+      }
+      if (cur>best) best=cur;
+      if (best>=targetJamo.length) break;
     }
-    return idx;
+    return best;
   }
 
-  function paintByWord(doneIdx){
-    if (!els.verseText) return;
-    const spans = els.verseText.querySelectorAll(".word");
-    for (let i=0;i<spans.length;i++){
-      spans[i].classList.toggle("read", i<=doneIdx);
-    }
-    paintedWordIdx = doneIdx;
-  }
+  // 안정/완료 판정 상태
+  let stableSince = 0, lastCompleteTs = 0, lastPrefix = 0;
+  let ignoreUntilTs = 0;
 
-  // ★ 완료 판정도 관대: 0.72
-  function isVerseComplete(covered, total){
-    if (!total) return false;
-    return (covered / total) >= 0.72;
-  }
-
-  // ---------- 인식 콜백 ----------
   function bestTranscripts(evt){
     const cand=[];
     for (let i=0;i<evt.results.length;i++){
       const res=evt.results[i];
-      const maxAlt=Math.min(res.length,5);
+      const maxAlt=Math.min(res.length,3);
       for (let a=0;a<maxAlt;a++) cand.push(res[a].transcript);
     }
     cand.sort((a,b)=>b.length-a.length);
-    return cand.slice(0,5);
+    return cand.slice(0,3);
   }
 
   function onSpeechResult(evt){
     const v = state.verses[state.currentVerseIdx] || "";
-    if (!v || !eojeols.length) return;
+    if (!v) return;
 
     const nowTs = Date.now();
     if (nowTs < ignoreUntilTs) return;
 
     const targetJ = normalizeToJamo(v, false);
-    let bestCovered = 0;
+    const L = targetJ.length;
+    const minRatio =
+      (L <= MATCH_PROFILE.shortLen)  ? MATCH_PROFILE.minRatioShort  :
+      (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
+                                       MATCH_PROFILE.minRatioLong;
+
+    let best = { chars:0, ratio:0 };
+    let strictMax = 0;
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
-      const covered = softPrefixJamo(targetJ, spokenJ);
-      if (covered > bestCovered) bestCovered = covered;
+      const tuned = getTunedOptsWithProfile(MATCH_PROFILE);
+      const curSoft   = softPrefixProgress(targetJ, spokenJ, tuned);
+      const curStrict = matchedPrefixLenContiguous(targetJ, spokenJ);
+      if (curSoft.chars > best.chars) best = curSoft;
+      if (curStrict > strictMax) strictMax = curStrict;
     }
 
-    const doneIdx = coveredToWordIdx(bestCovered);
-    if (doneIdx > paintedWordIdx) paintByWord(doneIdx);
+    // 화면 채움은 "엄격" 결과를 기준으로 한 스텝씩만 전진
+    const stepLimited = Math.min(strictMax, paintedPrefix + 2);
+    const paintLen = Math.min(stepLimited, L);
+    paintRead(paintLen);
+    paintedPrefix = paintLen;
 
-    const totalJ = targetJ.length;
+    const ratio = best.ratio;
+    const now = Date.now();
+    if (best.chars > lastPrefix){ stableSince = now; lastPrefix = best.chars; }
+
+    const holdOk = (now - stableSince) >= MATCH_PROFILE.holdMs;
+    const coolOk = (now - lastCompleteTs) >= MATCH_PROFILE.cooldownMs;
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
-    if (isFinal && isVerseComplete(bestCovered, totalJ)) {
-      completeVerse();
+    const longHoldOk = (now - stableSince) >= Math.max(MATCH_PROFILE.holdMs, FINAL_GRACE_MS);
+
+    const finalOk  = isFinal && ratio >= minRatio && coolOk;
+    const stableOk = ratio >= minRatio && holdOk && coolOk;
+    const graceOk  = ratio >= minRatio && longHoldOk && coolOk;
+    if (finalOk || stableOk || graceOk){
+      lastCompleteTs = now;
+      completeVerseWithProfile();
     }
   }
 
-  // ---------- 자동이동 ----------
+  // ---------- 자동이동(마이크 건드리지 않음) ----------
   async function advanceToNextVerse() {
     if (state.currentVerseIdx < state.verses.length - 1) {
       state.currentVerseIdx++;
@@ -557,18 +678,11 @@
     return false;
   }
 
-  async function completeVerse(){
-    // 절 버튼 완료 색상
-    state.completedVerses.add(state.currentVerseIdx + 1);
-    // VerseGrid 갱신
-    if (els.verseGrid) {
-      const btn = els.verseGrid.children[state.currentVerseIdx];
-      if (btn) btn.classList.add("done");
-    }
-
+  async function completeVerseWithProfile(){
     await incVersesRead(1);
     const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
     const b = getBookByKo(state.currentBookKo);
+    await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
 
     if (auto) {
       const moved = await advanceToNextVerse();
@@ -580,12 +694,13 @@
         alert("장 완료! 다음 장으로 이동하세요.");
         return;
       }
-      // 다음 절 바로 시작 시 앞서 칠해짐 방지
-      ignoreUntilTs = Date.now() + 450;
+      // 마이크는 그대로 두고, 잔여 입력만 잠시 무시
+      stableSince = 0; lastPrefix = 0; paintedPrefix = 0;
+      ignoreUntilTs = Date.now() + 400;
     }
   }
 
-  // ---------- Mic: 버튼으로만 ON/OFF ----------
+  // ---------- Mic control: 버튼으로만 ON/OFF ----------
   async function startListening(showAlert=true){
     if (!envGuardBeforeStart()) return;
     if (state.listening) return;
@@ -597,15 +712,27 @@
       return;
     }
 
+    // 모드/튜닝 패널 잠금
+    setModeRadiosDisabled(true);
+    setTuningDisabled(true);
+
+    stableSince=0; lastPrefix=0;
+
     state.recog.onresult = onSpeechResult;
-    // 자동 재시작 금지 — 종료되면 버튼 상태만 복구
+
+    // 자동 재시작 없음: onend는 UI만 반영
     state.recog.onend = () => {
       state.listening = false;
       els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
       stopMicLevel();
+      setModeRadiosDisabled(false);
+      setTuningDisabled(false);
+      console.log("[SR] ended");
     };
+
     state.recog.onerror = (e) => {
       console.warn("[SR] error:", e?.error, e);
+      // 자동제어 없음
     };
 
     try {
@@ -616,6 +743,8 @@
       startMicLevel();
     } catch(e){
       alert("음성인식 시작 실패: " + e.message);
+      setModeRadiosDisabled(false);
+      setTuningDisabled(false);
     }
   }
 
@@ -627,11 +756,13 @@
     state.listening=false;
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
     stopMicLevel();
+    setModeRadiosDisabled(false);
+    setTuningDisabled(false);
   }
 
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
 
-  // 앞/뒤 절 이동: Mic는 건드리지 않음 + 상태 표시/무시창
+  // 앞/뒤 절 버튼: 마이크 절대 건드리지 않음
   els.btnNextVerse?.addEventListener("click", ()=>{
     if(!state.verses.length) return;
     if(state.currentVerseIdx<state.verses.length-1){
@@ -639,6 +770,7 @@
       state.myStats.last.verse = state.currentVerseIdx + 1;
       saveLastPosition();
       updateVerseText();
+      stableSince=0; lastPrefix=0; paintedPrefix=0;
       ignoreUntilTs = Date.now() + 300;
     }
   });
@@ -649,6 +781,7 @@
       state.myStats.last.verse = state.currentVerseIdx + 1;
       saveLastPosition();
       updateVerseText();
+      stableSince=0; lastPrefix=0; paintedPrefix=0;
       ignoreUntilTs = Date.now() + 300;
     }
   });
@@ -716,8 +849,6 @@
       micSrc.connect(analyser);
 
       const dataArray = new Uint8Array(analyser.fftSize);
-      const bar = document.getElementById("micBar");
-      const dbLabel = document.getElementById("micDb");
 
       function update() {
         if (!analyser) return;
@@ -729,8 +860,8 @@
         }
         const rms = Math.sqrt(sumSq / dataArray.length);
         const db = 20 * Math.log10(rms || 1e-6);
-        if (bar) bar.style.width = Math.min(100, Math.max(0, rms * 400)) + "%";
-        if (dbLabel) dbLabel.textContent = (db <= -60 ? "-∞" : db.toFixed(0)) + " dB";
+        if (els.micBar) els.micBar.style.width = Math.min(100, Math.max(0, rms * 400)) + "%";
+        if (els.micDb) els.micDb.textContent = (db <= -60 ? "-∞" : db.toFixed(0)) + " dB";
         levelTimer = requestAnimationFrame(update);
       }
       update();
@@ -744,8 +875,89 @@
     if (audioCtx) { try { audioCtx.close(); } catch(_) {} }
     if (micStream) { try { micStream.getTracks().forEach(t=>t.stop()); } catch(_) {} }
     audioCtx = null; analyser = null; micSrc = null; micStream = null;
-    const bar = document.getElementById("micBar"); if (bar) bar.style.width = "0%";
-    const dbLabel = document.getElementById("micDb"); if (dbLabel) dbLabel.textContent = "-∞ dB";
+    if (els.micBar) els.micBar.style.width = "0%";
+    if (els.micDb) els.micDb.textContent = "-∞ dB";
+  }
+
+  // ---------- 튜닝 패널(네 가지 비용 값 UI) ----------
+  const TUNING_LS_KEY = "recogTuningV1";
+  function loadTuning(){
+    try { return JSON.parse(localStorage.getItem(TUNING_LS_KEY) || "{}"); } catch(_) { return {}; }
+  }
+  function saveTuning(obj){
+    localStorage.setItem(TUNING_LS_KEY, JSON.stringify(obj||{}));
+  }
+  function getTunedOptsWithProfile(profile){
+    const t = loadTuning();
+    return {
+      SUB_NEAR: (t.SUB_NEAR != null ? Number(t.SUB_NEAR) : profile.SUB_NEAR),
+      SUB_DIST: (t.SUB_DIST != null ? Number(t.SUB_DIST) : profile.SUB_DIST),
+      DEL_COST: (t.DEL_COST != null ? Number(t.DEL_COST) : profile.DEL_COST),
+      INS_COST: (t.INS_COST != null ? Number(t.INS_COST) : profile.INS_COST),
+    };
+  }
+
+  let tuningPanel, tuningInputs = {};
+  function createTuningPanel(){
+    if (tuningPanel) return;
+    tuningPanel = document.createElement("div");
+    tuningPanel.id = "recog-tuning";
+    tuningPanel.style.cssText = `
+      position:fixed; right:10px; bottom:10px; z-index:9999;
+      background:rgba(16,24,58,0.92); color:#fff; padding:10px 12px; border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.35); font-size:12px; width:240px;
+      backdrop-filter:saturate(1.2) blur(4px);
+    `;
+    tuningPanel.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px">
+        <strong style="font-size:13px">🎚️ 음성매칭 튜닝</strong>
+        <button type="button" id="tuneReset" style="font-size:11px; padding:2px 6px; border-radius:6px; border:0; background:#39437a; color:#fff">프로파일값</button>
+      </div>
+      ${["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].map(k=>`
+        <label style="display:block; margin:6px 0 4px">${k}
+          <input id="tune_${k}" type="number" step="0.01" min="0" max="2" style="width:100%; margin-top:2px; border-radius:8px; border:1px solid #556; padding:6px; background:#12183a; color:#fff"/>
+        </label>
+      `).join("")}
+      <div style="opacity:.75">※ 값 낮을수록 더 <b>관대</b>해집니다.</div>
+    `;
+    document.body.appendChild(tuningPanel);
+
+    ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
+      tuningInputs[k] = document.getElementById(`tune_${k}`);
+      tuningInputs[k].addEventListener("change", ()=>{
+        const v = tuningInputs[k].value;
+        const num = (v === "" ? null : Number(v));
+        const t = loadTuning();
+        if (num === null || Number.isNaN(num)) { delete t[k]; } else { t[k] = num; }
+        saveTuning(t);
+      });
+    });
+
+    function renderValuesFromProfile(){
+      const defaults = RECOG_PROFILES[currentMode] || RECOG_PROFILES.normal;
+      const t = loadTuning();
+      ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
+        tuningInputs[k].placeholder = String(defaults[k]);
+        tuningInputs[k].value = (t[k] != null ? t[k] : "");
+      });
+    }
+    renderValuesFromProfile();
+
+    document.getElementById("tuneReset").addEventListener("click", ()=>{
+      saveTuning({});
+      ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{ tuningInputs[k].value = ""; });
+    });
+
+    window.__renderTuningPlaceholders = renderValuesFromProfile;
+  }
+  createTuningPanel();
+
+  function setTuningDisabled(disabled){
+    if (!tuningPanel) return;
+    tuningPanel.style.opacity = disabled ? ".55" : "1";
+    ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
+      if (tuningInputs[k]) tuningInputs[k].disabled = disabled;
+    });
   }
 
 })();
