@@ -1,198 +1,274 @@
 /* ---------- Reset & Base ---------- */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
+body, html {
   margin: 0;
-  font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif;
-  background: #0b1020;
-  color: #eaf0ff;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  padding: 0;
+  font-family: system-ui, sans-serif;
+  background: #f8f9fb;
+  color: #222;
 }
 
-/* Screen routing */
-.screen { display: none; }
-.screen.show { display: block; }
-
-/* ---------- Login / Hero ---------- */
-.hero {
-  position: relative;             /* glow가 클릭 가로채지 않도록 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100dvh;
-  padding: 24px 16px;
+.screen {
+  display: none;
 }
-.glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;           /* 버튼 클릭 통과 */
-  background:
-    radial-gradient(600px 300px at 80% 10%, rgba(61, 87, 255, 0.15), transparent 60%),
-    radial-gradient(800px 500px at 20% 100%, rgba(53, 219, 142, 0.12), transparent 60%);
-  filter: blur(0.5px);
+.screen.show {
+  display: block;
 }
-.login-card {
-  position: relative;
-  width: 100%;
-  max-width: 380px;
-  border-radius: 14px;
-  padding: 18px 16px;
-  background: #10183a;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+
+.hidden {
+  display: none !important;
 }
-.login-head { text-align: center; margin-bottom: 12px; }
-.logo-hero { font-size: 48px; line-height: 1; margin-bottom: 6px; }
-.muted { color: #9fb0d9; }
-.sm { font-size: 12px; }
-.smallprint { font-size: 11px; color: #8ea0ca; }
 
-.form-label { display: block; margin: 8px 0 6px; font-size: 14px; color: #cfe0ff; }
-.input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #273056;
-  border-radius: 10px;
-  background: #0d1430;
-  color: #eaf0ff;
-  outline: none;
+/* ---------- Layout ---------- */
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px;
 }
-.input:focus { border-color: #6aa6ff; box-shadow: 0 0 0 3px rgba(106,166,255,0.2); }
-
-.row { display: flex; align-items: center; gap: 8px; }
-.row.between { justify-content: space-between; }
-.mt12 { margin-top: 12px; }
-.mt16 { margin-top: 16px; }
-
-/* ---------- Buttons ---------- */
-.btn {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  background: #2b335a;
-  color: #fff;
-  transition: transform .05s ease, background .15s ease, opacity .2s;
-  user-select: none;
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
 }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: .6; cursor: default; }
-.btn.fill { background: #2b335a; }
-.btn.primary { background: #6aa6ff; color: #0b1020; }
-.btn.small { font-size: 12px; padding: 6px 10px; border-radius: 8px; }
-.btn.danger { background: #ff6a6a; color: #fff; }
-
-/* ---------- App Bar ---------- */
 .appbar {
   display: flex;
   align-items: center;
-  gap: 8px;
   justify-content: space-between;
-  padding: 10px 12px;
   background: #10183a;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  border-bottom: 1px solid #1b2448;
-}
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.brand .logo { font-size: 18px; }
-.actions { display: flex; gap: 6px; }
-.userbox { display: flex; align-items: center; gap: 8px; }
-.userbox.hidden { display: none; }
-.avatar { width: 26px; height: 26px; border-radius: 50%; background: #2b335a; }
-
-/* ---------- Main / Cards ---------- */
-.container { padding: 12px; max-width: 900px; margin: 0 auto; }
-.card {
-  background: #10183a;
-  border: 1px solid #1b2448;
-  border-radius: 14px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-summary { cursor: pointer; font-weight: 600; }
-.field-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-
-.select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #273056;
-  border-radius: 10px;
-  background: #0d1430;
-  color: #eaf0ff;
-}
-
-/* ---------- Grids ---------- */
-.grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.grid.small button { font-size: 12px; padding: 6px 10px; }
-
-.chip {
+  color: #fff;
   padding: 8px 12px;
-  border: 1px solid #273056;
-  border-radius: 999px;
-  background: #18204a;
-  color: #eaf0ff;
+}
+.appbar .brand {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+.appbar .actions {
+  margin-left: auto;
+  margin-right: 12px;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #f1f1f1;
   cursor: pointer;
 }
-.chip.active { background: #6aa6ff; color: #0b1020; border-color: #6aa6ff; }
-.chip.done   { background: #43d17a; color: #072216; border-color: #43d17a; }
+.btn.primary {
+  background: #2b6fff;
+  color: #fff;
+  border-color: #2b6fff;
+}
+.btn.danger {
+  background: #d93636;
+  color: #fff;
+  border-color: #d93636;
+}
+.btn.small {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+}
+.btn.fill {
+  flex: 1;
+}
+.btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* ---------- Inputs ---------- */
+.input, .select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+.form-label {
+  font-size: 0.85rem;
+  display: block;
+  margin-bottom: 4px;
+}
+.mt12 { margin-top: 12px; }
+.mt16 { margin-top: 16px; }
+
+/* ---------- Login ---------- */
+.hero {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+.login-card {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 3px 8px rgba(0,0,0,.1);
+}
+.logo-hero {
+  font-size: 2rem;
+}
+.muted {
+  color: #666;
+  font-size: 0.9rem;
+}
+.sm {
+  font-size: 0.8rem;
+}
 
 /* ---------- Reader ---------- */
-.reader-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.loc { font-weight: 700; }
-.verse-container {
-  min-height: 120px;
-  padding: 10px;
-  border: 1px solid #273056;
-  border-radius: 12px;
-  background: #0d1430;
+.reader-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
-.verse-text { line-height: 1.9; font-size: 16px; word-break: keep-all; }
-.verse-text span.read { color: #6aa6ff; }
+.loc {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.verse-container {
+  padding: 12px;
+  border-radius: 8px;
+  background: #fdfdfd;
+  border: 1px solid #ddd;
+  min-height: 80px;
+}
+.verse-text {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  word-wrap: break-word;
+}
 
-/* ---------- FAB Controls ---------- */
+/* ---------- 어절 하이라이트 ---------- */
+.word.read {
+  background: linear-gradient(transparent 58%, rgba(67,209,122,.35) 0);
+  transition: background .15s ease;
+}
+
+/* ---------- Grid Buttons ---------- */
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.grid.small {
+  gap: 4px;
+}
+.chip {
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.chip.active {
+  border-color:#2b6fff;
+  background: rgba(43,111,255,.08);
+  color:#2b6fff;
+}
+.chip.done {
+  border-color:#43d17a;
+  background: rgba(67,209,122,.22);
+  color:#115b37;
+}
+
+/* verseGrid 전용 색상 강조 */
+.grid.small .chip.active {
+  border-color:#2bb673;
+  color:#2bb673;
+  background:rgba(43,182,115,.08);
+}
+.grid.small .chip.done {
+  border-color:#43d17a;
+  background:rgba(67,209,122,.22);
+  color:#115b37;
+}
+
+/* chapterGrid 전용 색상 */
+.grid .chip.done {
+  border-color:#6cc6ff;
+  background:rgba(108,198,255,.18);
+  color:#0b3a55;
+}
+
+/* ---------- FAB ---------- */
 .fab-col {
   position: fixed;
-  right: 16px; bottom: 16px;
-  display: flex; flex-direction: column; gap: 10px;
-  z-index: 8;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .fab {
-  width: 52px; height: 52px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
+  font-size: 1.5rem;
   border: none;
-  font-size: 20px;
-  background: #2b335a;
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
   cursor: pointer;
 }
-.fab.primary { background: #6aa6ff; color: #0b1020; }
-
-/* ---------- Modal ---------- */
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; }
-.modal.hidden { display: none; }
-.modal-body {
-  width: 92%;
-  max-width: 900px;
-  background: #10183a;
-  border: 1px solid #1b2448;
-  border-radius: 14px;
-  padding: 14px;
+.fab.primary {
+  background: #2b6fff;
+  color: #fff;
 }
 
-.matrix-wrap { overflow: auto; max-height: 70vh; margin-top: 8px; }
-.matrix { border-collapse: collapse; font-size: 11px; width: max-content; min-width: 100%; }
-.matrix th, .matrix td { border: 1px solid #273056; padding: 3px 4px; text-align: center; }
-.matrix th.book { background: #18204a; color: #eaf0ff; position: sticky; left: 0; z-index: 1; }
+/* ---------- Modal ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99;
+}
+.modal.hidden { display: none; }
+.modal-body {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+.modal-body.full {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
 
-/* ---------- Helpers ---------- */
-.hidden { display: none !important; }
+/* ---------- Matrix ---------- */
+.matrix {
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+.matrix th, .matrix td {
+  border: 1px solid #ccc;
+  padding: 2px 4px;
+  text-align: center;
+  min-width: 20px;
+}
+.matrix th.book {
+  background: #f1f1f1;
+  position: sticky;
+  left: 0;
+}
 
-/* ---------- Mobile tweaks ---------- */
-@media (max-width: 480px) {
-  .verse-text { font-size: 15px; }
-  .chip { padding: 7px 10px; }
-  .fab { width: 48px; height: 48px; }
+/* 완료 셀 강조 */
+.matrix td[style*="rgba(67,209,122"] {
+  box-shadow: inset 0 0 0 1px rgba(67,209,122,.35);
+}
+
+/* ---------- Stats ---------- */
+.stats {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #444;
 }
