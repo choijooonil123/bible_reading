@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 마이크레벨 + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -384,6 +384,9 @@
   };
   let MATCH_PROFILE = RECOG_PROFILES.normal;
 
+  // final 유예: final이 늦어도 충분히 안정되면 통과
+  const FINAL_GRACE_MS = 1200;
+
   // 라디오 → 프로파일 변경
   document.querySelectorAll("input[name=recogMode]")?.forEach(radio=>{
     radio.addEventListener("change", ()=>{
@@ -535,9 +538,10 @@
     const holdOk = (now - stableSince) >= MATCH_PROFILE.holdMs;
     const coolOk = (now - lastCompleteTs) >= MATCH_PROFILE.cooldownMs;
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
+    const longHoldOk = (now - stableSince) >= Math.max(MATCH_PROFILE.holdMs, FINAL_GRACE_MS);
 
-    // v3: 'final'일 때만 완료
-    if (ratio >= minRatio && holdOk && coolOk && isFinal){
+    // final이 오거나, 충분히 안정되었으면 완료 처리
+    if (ratio >= minRatio && holdOk && coolOk && (isFinal || longHoldOk)){
       lastCompleteTs = now;
       completeVerseWithProfile();
     }
@@ -594,7 +598,7 @@
       stableSince = 0; lastPrefix = 0;
 
       // 음성인식 완전 재기동
-      await hardRestartRecognition(250); // 200~400 사이에서 환경에 맞게 조절 가능
+      await hardRestartRecognition(250); // 200~400 사이에서 환경 맞게 조절 가능
     }
   }
 
@@ -621,6 +625,7 @@
       state.recog.start();
       state.listening = true;
       els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
+      startMicLevel(); // 레벨미터 시작
     } catch(e){
       alert("음성인식 시작 실패: " + e.message);
     }
@@ -632,6 +637,7 @@
     }
     state.listening=false;
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
+    stopMicLevel(); // 레벨미터 중지
   }
 
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
@@ -689,52 +695,48 @@
   els.matrixModal?.addEventListener("click", (e)=>{ const body=els.matrixModal.querySelector(".modal-body"); if (!body || !e.target) return; if (!body.contains(e.target)) closeMatrix(); });
   window.addEventListener("keydown", (e)=>{ if (e.key==='Escape' && els.matrixModal?.classList.contains('show')) closeMatrix(); });
 
-// ---------- Mic Level Meter ----------
-let audioCtx, analyser, micSrc;
-let levelTimer;
+  // ---------- Mic Level Meter ----------
+  let audioCtx, analyser, micSrc, levelTimer, micStream;
+  async function startMicLevel() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      micSrc = audioCtx.createMediaStreamSource(micStream);
+      micSrc.connect(analyser);
 
-async function startMicLevel() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-
-    micSrc = audioCtx.createMediaStreamSource(stream);
-    micSrc.connect(analyser);
-
-    const dataArray = new Uint8Array(analyser.fftSize);
-
-    function update() {
-      analyser.getByteTimeDomainData(dataArray);
-      let sumSq = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        const val = (dataArray[i] - 128) / 128.0;
-        sumSq += val * val;
-      }
-      const rms = Math.sqrt(sumSq / dataArray.length);
-      const db = 20 * Math.log10(rms || 0.00001);
-
+      const dataArray = new Uint8Array(analyser.fftSize);
       const bar = document.getElementById("micBar");
       const dbLabel = document.getElementById("micDb");
-      if (bar) bar.style.width = Math.min(100, Math.max(0, (rms * 400))) + "%";
-      if (dbLabel) dbLabel.textContent = db.toFixed(0) + " dB";
 
-      levelTimer = requestAnimationFrame(update);
+      function update() {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(dataArray);
+        let sumSq = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128;
+          sumSq += v * v;
+        }
+        const rms = Math.sqrt(sumSq / dataArray.length);
+        const db = 20 * Math.log10(rms || 1e-6);
+        if (bar) bar.style.width = Math.min(100, Math.max(0, rms * 400)) + "%";
+        if (dbLabel) dbLabel.textContent = (db <= -60 ? "-∞" : db.toFixed(0)) + " dB";
+        levelTimer = requestAnimationFrame(update);
+      }
+      update();
+    } catch (e) {
+      console.warn("[MicLevel] 마이크 접근 실패:", e);
     }
-    update();
-  } catch (e) {
-    console.warn("[MicLevel] 마이크 접근 실패:", e);
   }
-}
-
-function stopMicLevel() {
-  if (levelTimer) cancelAnimationFrame(levelTimer);
-  if (audioCtx) {
-    try { audioCtx.close(); } catch(_) {}
+  function stopMicLevel() {
+    if (levelTimer) cancelAnimationFrame(levelTimer);
+    levelTimer = null;
+    if (audioCtx) { try { audioCtx.close(); } catch(_) {} }
+    if (micStream) { try { micStream.getTracks().forEach(t=>t.stop()); } catch(_) {} }
+    audioCtx = null; analyser = null; micSrc = null; micStream = null;
+    const bar = document.getElementById("micBar"); if (bar) bar.style.width = "0%";
+    const dbLabel = document.getElementById("micDb"); if (dbLabel) dbLabel.textContent = "-∞ dB";
   }
-  audioCtx = null; analyser = null; micSrc = null;
-}
-
 
 })();
