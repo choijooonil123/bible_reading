@@ -1,7 +1,7 @@
 /* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(버튼전용 ON/OFF)
-   - 튜닝 패널: SUB_NEAR / SUB_DIST / DEL_COST / INS_COST (UI 유지)
+   - 튜닝 패널 유지: SUB_NEAR / SUB_DIST / DEL_COST / INS_COST
    - 자동이동 시 마이크는 건드리지 않음(버튼으로만 ON/OFF)
-   - 표시 채우기는 “앞서 가지 않게” (엄격 접두 기준)
+   - 화면 채우기는 “앞서 가지 않게”(엄격 접두 기반)
 */
 (() => {
   // ---------- PWA ----------
@@ -488,12 +488,12 @@
     return t;
   }
 
-  // ---- 알고리즘: (1) 관대한 접두(옵션 지원)
+  // ---- 알고리즘: (1) 관대한 접두(튜닝 반영)
   function softPrefixProgress(targetJamo, spokenJamo, opts={}) {
     if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
 
     const SUB_NEAR = opts.SUB_NEAR ?? 0.35;
-    const SUB_DIST = opts.SUB_DIST ?? 1.0;
+    const SUB_DIST = opts.SUB_DIST ?? 1.00;
     const DEL_COST = opts.DEL_COST ?? 0.55;
     const INS_COST = opts.INS_COST ?? 0.55;
 
@@ -563,9 +563,35 @@
     return best;
   }
 
+  // ---- 튜닝값 합성(패널/전역/URL/LS 지원, UI 변경 없음)
+  function getTunedOptsWithProfile(profile){
+    const out = { ...profile };
+    try{
+      const raw = new URLSearchParams(location.search).get("tune");
+      if (raw){
+        raw.split(",").forEach(p=>{
+          const [k,v] = p.split(":");
+          if (k && v!=null) out[k.trim().toUpperCase()] = Number(v);
+        });
+      }
+    }catch(_){}
+    if (window.RECOG_TUNING){
+      ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
+        if (typeof window.RECOG_TUNING[k]==="number") out[k]=window.RECOG_TUNING[k];
+      });
+    }
+    try{
+      const t = JSON.parse(localStorage.getItem("recogTuningV1")||"{}");
+      ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
+        if (typeof t[k]==="number") out[k]=t[k];
+      });
+    }catch(_){}
+    return out;
+  }
+
   // 안정/완료 판정 상태
   let stableSince = 0, lastCompleteTs = 0, lastPrefix = 0;
-  let paintedHold = 0; // UI용 보조
+  let paintedHold = 0; // UI용 보조(필요시)
   let ignoreUntilTs = 0;
 
   function bestTranscripts(evt){
@@ -597,9 +623,9 @@
     let strictMax = 0;
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
-      const tuned = getTunedOptsWithProfile(MATCH_PROFILE);
-      const curSoft   = softPrefixProgress(targetJ, spokenJ, tuned);
-      const curStrict = matchedPrefixLenContiguous(targetJ, spokenJ);
+      const tuned   = getTunedOptsWithProfile(MATCH_PROFILE);
+      const curSoft   = softPrefixProgress(targetJ, spokenJ, tuned);       // 판정은 관대
+      const curStrict = matchedPrefixLenContiguous(targetJ, spokenJ);       // 표시는 엄격
       if (curSoft.chars > best.chars) best = curSoft;
       if (curStrict > strictMax) strictMax = curStrict;
     }
@@ -684,13 +710,20 @@
     stableSince=0; lastPrefix=0; paintedPrefix=0;
 
     state.recog.onresult = onSpeechResult;
+
+    // 버튼으로 켠 상태에서는 끊겨도 내부 재기동(버튼 상태는 그대로)
     state.recog.onend = () => {
-      state.listening = false;
-      els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
-      stopMicLevel();
-      setModeRadiosDisabled(false);
-      setTuningDisabled(false);
+      if (state.listening) {
+        try { state.recog.start(); } catch(_) {}
+      } else {
+        // 사용자가 끈 경우
+        els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
+        stopMicLevel();
+        setModeRadiosDisabled(false);
+        setTuningDisabled(false);
+      }
     };
+
     state.recog.onerror = (e) => {
       console.warn("[SR] error:", e?.error, e);
     };
@@ -844,7 +877,7 @@
   function saveTuning(obj){
     localStorage.setItem(TUNING_LS_KEY, JSON.stringify(obj||{}));
   }
-  function getTunedOptsWithProfile(profile){
+  function getTunedOptsWithLSorProfile(profile){
     const t = loadTuning();
     return {
       SUB_NEAR: (t.SUB_NEAR != null ? Number(t.SUB_NEAR) : profile.SUB_NEAR),
@@ -908,6 +941,23 @@
     });
 
     window.__renderTuningPlaceholders = renderPlaceholders;
+
+    // 패널이 FAB을 가리지 않도록 안전 위치 계산(디자인 변경 없음)
+    function positionTuningPanel(){
+      if (!tuningPanel) return;
+      const fabCol = document.querySelector('.fab-col');
+      let safeBottom = 10; // 기본
+      if (fabCol) {
+        const r = fabCol.getBoundingClientRect();
+        safeBottom = Math.max(10, window.innerHeight - r.top + 12); // FAB 위로 12px 여유
+      }
+      tuningPanel.style.bottom = safeBottom + 'px';
+      tuningPanel.style.right = '10px';
+    }
+    window.addEventListener('resize', positionTuningPanel);
+    window.addEventListener('orientationchange', positionTuningPanel);
+    positionTuningPanel();
+    setTimeout(positionTuningPanel, 0);
   })();
 
   function setTuningDisabled(disabled){
