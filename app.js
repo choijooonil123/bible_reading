@@ -1,6 +1,7 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동 시 마이크 유지 + 마이크레벨 + 진도저장
-   - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
-   - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable)
+   - 마이크는 오직 버튼으로만 ON/OFF
+   - 마이크 ON 동안 음성 모드 조작 불가
+   - 자동이동 시 마이크 상태를 변경하지 않음
 */
 (() => {
   // ---------- PWA ----------
@@ -83,7 +84,7 @@
     bible: null, currentBookKo: null, currentChapter: null,
     verses: [], currentVerseIdx: 0, listening:false, recog:null,
     progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
-    suppressAutoRestart: false // onend 자동재시작 억제용 가드
+    suppressAutoRestart: false // (유지) 자동재시작 가드 — 이제 사용 안 함
   };
 
   // ---------- bible.json ----------
@@ -228,7 +229,9 @@
     if (db && user) {
       try {
         await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
-          .set({ readChapters: Array.from(state.progress[bookId].readChapters) }, { merge: true });
+          .set({ readChapters: Array.from(state.progress[beBookId?.id||bookId].readChapters || state.progress[bookId].readChapters) }, { merge: true });
+      } catch(_) {}
+      try {
         await db.collection("users").doc(user.uid)
           .set({ chaptersRead: firebase.firestore.FieldValue.increment(1),
                  updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
@@ -367,7 +370,7 @@
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
 
-  // ---------- Speech Recognition (v3-stable: 관대한 연속매칭 + final 유예) ----------
+  // ---------- Speech Recognition (v3-stable) ----------
   const getRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
@@ -383,74 +386,62 @@
   const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
   const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
   const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
-
-  function supportsSR() {
-    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  }
+  function supportsSR(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
   function envGuardBeforeStart() {
-    if (!supportsSR()) {
-      alert("이 브라우저는 음성인식을 지원하지 않습니다. iOS는 Safari, Android는 Chrome을 사용해 주세요.");
-      return false;
-    }
-    if (!isSecure) {
-      alert("음성인식은 HTTPS에서만 안정적으로 동작합니다. https 주소로 접속해 주세요.");
-      return false;
-    }
-    if (isIOS && isStandalone) {
-      alert("iOS 홈화면(PWA) 모드에서는 음성인식이 동작하지 않습니다. Safari 앱에서 이 페이지를 열어 주세요.");
-      return false;
-    }
+    if (!supportsSR()) { alert("이 브라우저는 음성인식을 지원하지 않습니다."); return false; }
+    if (!isSecure) { alert("음성인식은 HTTPS에서만 동작합니다."); return false; }
+    if (isIOS && isStandalone) { alert("iOS 홈화면(PWA)에서는 음성인식이 동작하지 않습니다. Safari 앱에서 열어주세요."); return false; }
     return true;
   }
-  let micPrimed = false;
-  async function primeMicOnce() {
+  let micPrimed=false;
+  async function primeMicOnce(){
     if (micPrimed) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: { ideal: 48000 }
-        }
-      });
-      stream.getTracks().forEach(t => t.stop());
-      micPrimed = true;
-    } catch (e) {
-      console.warn("[PrimeMic] 실패:", e);
-      alert("마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해 주세요.");
-      throw e;
-    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:{ideal:48000} }
+    });
+    stream.getTracks().forEach(t=>t.stop());
+    micPrimed=true;
   }
-  // ----------------------------------------
 
-  // 모드 프로파일 (조정된 임계값)
+  // 모드 프로파일
   const RECOG_PROFILES = {
     fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
     normal: { shortLen:30, mediumLen:60, minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84, holdMs:480, cooldownMs:650, postAdvanceDelayMs:400 },
     lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76, holdMs:520, cooldownMs:700, postAdvanceDelayMs:500 }
   };
-  let MATCH_PROFILE = RECOG_PROFILES.normal;
-
-  // final 유예
+  let currentMode = "normal";
+  let MATCH_PROFILE = RECOG_PROFILES[currentMode];
   const FINAL_GRACE_MS = 1200;
 
-  // 라디오 → 프로파일 변경 (index.html에 라디오가 있을 때)
-  document.querySelectorAll("input[name=recogMode]")?.forEach(radio=>{
+  // 모드 라디오 (ON 동안 비활성화)
+  const modeRadios = Array.from(document.querySelectorAll("input[name=recogMode]"));
+  function applyModeFromUI() {
+    const val = document.querySelector("input[name=recogMode]:checked")?.value || currentMode;
+    currentMode = val;
+    MATCH_PROFILE = RECOG_PROFILES[currentMode] || RECOG_PROFILES.normal;
+    console.log("[RecogMode] 변경:", currentMode, MATCH_PROFILE);
+  }
+  function setModeRadiosDisabled(disabled){
+    modeRadios.forEach(r => r.disabled = disabled);
+  }
+  modeRadios.forEach(radio=>{
     radio.addEventListener("change", ()=>{
-      const val = document.querySelector("input[name=recogMode]:checked")?.value || "normal";
-      MATCH_PROFILE = RECOG_PROFILES[val] || RECOG_PROFILES.normal;
-      console.log("[RecogMode] 변경:", val, MATCH_PROFILE);
+      if (state.listening) {
+        // 마이크 켜진 상태에서는 조작 불가
+        // 체크 되돌리기
+        modeRadios.forEach(r => { r.checked = (r.value === currentMode); });
+        alert("마이크가 켜져있는 동안에는 음성모드를 바꿀 수 없습니다.");
+        return;
+      }
+      applyModeFromUI();
     });
   });
 
-  // 자모 분해 테이블
+  // 자모 분해/정규화
   const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
   const JUNG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
   const JONG = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
   const S_BASE=0xAC00, L_COUNT=19, V_COUNT=21, T_COUNT=28, N_COUNT=V_COUNT*T_COUNT, S_COUNT=L_COUNT*N_COUNT;
-
   function decomposeJamo(s){
     const out=[];
     for (const ch of (s||"")){
@@ -467,7 +458,6 @@
     return out.join("");
   }
 
-  // 숫자 간략 정규화(1~99)
   const NUM_KO = {"영":0,"공":0,"하나":1,"한":1,"둘":2,"두":2,"셋":3,"세":3,"넷":4,"네":4,"다섯":5,"여섯":6,"일곱":7,"여덟":8,"아홉":9,"열":10};
   function normalizeKoreanNumbers(s){
     return s
@@ -498,64 +488,55 @@
       .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
   }
 
-  // 불용어 제거 OFF, 발음 보정 ON
   const USE_STOPWORD_STRIP = false;
-  const USE_PRONUN_HEUR   = true;  // '의'≈'에' 보정
+  const USE_PRONUN_HEUR   = true;
   const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
   const pronunciationHeuristics = s => s.replace(/의/g,"에");
 
-  // 공통 정규화 → 자모열
   function normalizeToJamo(s, forSpoken=false){
-    let t = (s||"").normalize("NFKC")
-      .replace(/[“”‘’"'\u200B-\u200D`´^~]/g,"")
-      .toLowerCase();
-
+    let t = (s||"").normalize("NFKC").replace(/[“”‘’"'\u200B-\u200D`´^~]/g,"").toLowerCase();
     t = normalizeKoreanNumbers(t);
     if (USE_STOPWORD_STRIP) t = t.replace(STOPWORDS," ");
     if (forSpoken && USE_PRONUN_HEUR) t = pronunciationHeuristics(t);
-
     t = t.replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim();
     t = decomposeJamo(t).replace(/\s+/g,"");
     return t;
   }
 
   // ---- 채움/무시 타이머 상태 ----
-  let paintedPrefix = 0;   // 화면에 채운(확정) 글자 길이
-  let ignoreUntilTs = 0;   // 절 전환 직후 잠시 무시할 시간 (ms)
+  let paintedPrefix = 0;
+  let ignoreUntilTs = 0;
 
   // 관대한 연속(prefix) 매칭
   function softPrefixProgress(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
-
     const L = targetJamo.length;
-    let ti = 0, si = 0, matched = 0, errors = 0, skips = 0;
-
-    const MAX_ERR   = Math.min(5, Math.floor(L / 12) + 1); // 12자당 1개
-    const MAX_SKIPS = Math.min(3, Math.floor(L / 25) + 1); // 25자당 1개
-
-    while (ti < L && si < spokenJamo.length){
+    let ti=0, si=0, matched=0, errors=0, skips=0;
+    const MAX_ERR   = Math.min(5, Math.floor(L/12)+1);
+    const MAX_SKIPS = Math.min(3, Math.floor(L/25)+1);
+    while (ti<L && si<spokenJamo.length){
       if (targetJamo[ti] === spokenJamo[si]) { ti++; si++; matched++; continue; }
       if (errors < MAX_ERR){ errors++; ti++; si++; matched++; continue; }
-      if (skips < MAX_SKIPS && si+1 < spokenJamo.length && targetJamo[ti] === spokenJamo[si+1]) { si++; skips++; continue; }
-      if (skips < MAX_SKIPS && ti+1 < L && targetJamo[ti+1] === spokenJamo[si]) { ti++; skips++; matched++; continue; }
+      if (skips < MAX_SKIPS && si+1<spokenJamo.length && targetJamo[ti]===spokenJamo[si+1]) { si++; skips++; continue; }
+      if (skips < MAX_SKIPS && ti+1<L && targetJamo[ti+1]===spokenJamo[si]) { ti++; skips++; matched++; continue; }
       break;
     }
-    const ratio = L ? matched / L : 0;
+    const ratio = L ? matched/L : 0;
     return { chars: matched, ratio };
   }
 
   function matchedPrefixLenContiguous(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return 0;
-    let best = 0;
+    let best=0;
     const maxShift = Math.min(5, Math.max(0, spokenJamo.length-1));
-    for (let shift = 0; shift <= maxShift; shift++){
-      let ti = 0, si = shift, cur = 0;
-      while (ti < targetJamo.length && si < spokenJamo.length){
+    for (let shift=0; shift<=maxShift; shift++){
+      let ti=0, si=shift, cur=0;
+      while (ti<targetJamo.length && si<spokenJamo.length){
         if (targetJamo[ti] !== spokenJamo[si]) break;
         cur++; ti++; si++;
       }
-      if (cur > best) best = cur;
-      if (best >= targetJamo.length) break;
+      if (cur>best) best=cur;
+      if (best>=targetJamo.length) break;
     }
     return best;
   }
@@ -589,7 +570,7 @@
     if (!v) return;
 
     const nowTs = Date.now();
-    if (nowTs < ignoreUntilTs) return; // 절 전환 직후 잠시 무시
+    if (nowTs < ignoreUntilTs) return;
 
     const targetJ = normalizeToJamo(v, false);
     const L = targetJ.length;
@@ -598,7 +579,6 @@
       (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
                                        MATCH_PROFILE.minRatioLong;
 
-    // 관대한 매칭(완료 판정) + 보수적 매칭(화면 채움)
     let best = { chars:0, ratio:0 };
     let strictMax = 0;
     for (const tr of bestTranscripts(evt)){
@@ -609,7 +589,6 @@
       if (curStrict > strictMax) strictMax = curStrict;
     }
 
-    // 채움은 연속 prefix 기준 + 프레임당 2글자 제한
     const stepLimited = Math.min(strictMax, paintedPrefix + 2);
     const paintLen = Math.min(stepLimited, L);
     paintRead(paintLen);
@@ -633,7 +612,7 @@
     }
   }
 
-  // ---------- 자동이동/재시작 유틸 ----------
+  // ---------- 자동이동 유틸 ----------
   async function advanceToNextVerse() {
     if (state.currentVerseIdx < state.verses.length - 1) {
       state.currentVerseIdx++;
@@ -645,25 +624,13 @@
     return false;
   }
 
-  async function hardRestartRecognition(delayMs = 250) {
-    state.suppressAutoRestart = true; // onend 자동재시작 방지
-    stopListening(false);
-    try { state.recog = null; } catch(_) {}
-    await new Promise(r => setTimeout(r, delayMs)); // 자원 반환 대기
-    startListening(false);
-    setTimeout(() => { state.suppressAutoRestart = false; }, 100);
-  }
-
   async function completeVerseWithProfile(){
     await incVersesRead(1);
-
     const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
     const b = getBookByKo(state.currentBookKo);
-
     await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
 
     if (auto) {
-      // 마이크는 끄지 않고 유지
       const moved = await advanceToNextVerse();
       if (!moved) {
         await markChapterDone(b.id, state.currentChapter);
@@ -673,54 +640,57 @@
         alert("장 완료! 다음 장으로 이동하세요.");
         return;
       }
-      // 다음 절 시작 시 잔여 입력을 걸러내기 위한 짧은 무시창
+      // 마이크는 건드리지 않음. 잔여 입력만 잠시 무시
       stableSince = 0; lastPrefix = 0; paintedPrefix = 0;
       ignoreUntilTs = Date.now() + 400;
     }
   }
 
+  // ---------- Mic control: 버튼으로만 ON/OFF ----------
   async function startListening(showAlert=true){
-    // 환경 체크 (iOS PWA/HTTP/미지원 브라우저)
+    // 환경 가드
     if (!envGuardBeforeStart()) return;
-
     if (state.listening) return;
+
     state.recog = getRecognition();
     if (!state.recog){
-      els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(데스크톱 Chrome 권장)");
+      els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(Chrome/Safari 권장)");
       if (showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다.");
       return;
     }
+
+    // 모드 라디오 잠금
+    setModeRadiosDisabled(true);
+
     stableSince=0; lastPrefix=0;
 
     state.recog.onresult = onSpeechResult;
+
+    // 자동 재시작 절대 금지: onend는 UI만 반영
     state.recog.onend = () => {
-      if (state.listening && !state.suppressAutoRestart) {
-        try { state.recog.start(); } catch(_) {}
-      }
+      state.listening = false;
+      els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
+      stopMicLevel();
+      // 모드 라디오 해제
+      setModeRadiosDisabled(false);
+      console.log("[SR] ended");
     };
+
     state.recog.onerror = (e) => {
       console.warn("[SR] error:", e?.error, e);
-      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
-        alert("마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해 주세요.");
-        stopListening();
-        return;
-      }
-      if (e?.error === "no-speech") { try { state.recog.start(); } catch(_) {} return; }
-      if (e?.error === "aborted") return;
-      if (e?.error === "network") { alert("네트워크 문제로 음성인식 연결에 실패했습니다."); return; }
-      try { state.recog.start(); } catch(_) {}
+      // 자동 재시작/중지는 하지 않음. onend가 올 수 있으니 거기에 맡김.
     };
 
     try {
-      // iOS/Android 모두 첫 시작 때 마이크 워밍업이 도움이 됨
-      await primeMicOnce();
-
+      await primeMicOnce(); // 권한/오디오 경로 워밍업
       state.recog.start();
       state.listening = true;
       els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
-      startMicLevel(); // 레벨미터 시작
+      startMicLevel();
     } catch(e){
       alert("음성인식 시작 실패: " + e.message);
+      // 실패 시 라디오 잠금 해제
+      setModeRadiosDisabled(false);
     }
   }
 
@@ -731,14 +701,37 @@
     }
     state.listening=false;
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
-    stopMicLevel(); // 레벨미터 중지
+    stopMicLevel();
+    // 모드 라디오 해제
+    setModeRadiosDisabled(false);
   }
 
+  // 버튼으로만 제어
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
-  els.btnNextVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; state.suppressAutoRestart = true; stopListening(false);
-    if(state.currentVerseIdx<state.verses.length-1){ state.currentVerseIdx++; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; hardRestartRecognition(200); } else { state.suppressAutoRestart=false; } });
-  els.btnPrevVerse?.addEventListener("click", ()=>{ if(!state.verses.length) return; state.suppressAutoRestart = true; stopListening(false);
-    if(state.currentVerseIdx>0){ state.currentVerseIdx--; state.myStats.last.verse=state.currentVerseIdx+1; saveLastPosition(); updateVerseText(); stableSince=0; lastPrefix=0; hardRestartRecognition(200); } else { state.suppressAutoRestart=false; } });
+
+  // 앞/뒤 절 이동: 마이크 절대 건드리지 않음
+  els.btnNextVerse?.addEventListener("click", ()=>{
+    if(!state.verses.length) return;
+    if(state.currentVerseIdx<state.verses.length-1){
+      state.currentVerseIdx++;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      stableSince=0; lastPrefix=0; paintedPrefix=0;
+      ignoreUntilTs = Date.now() + 300; // 잔여 입력 잠깐 무시
+    }
+  });
+  els.btnPrevVerse?.addEventListener("click", ()=>{
+    if(!state.verses.length) return;
+    if(state.currentVerseIdx>0){
+      state.currentVerseIdx--;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      stableSince=0; lastPrefix=0; paintedPrefix=0;
+      ignoreUntilTs = Date.now() + 300;
+    }
+  });
 
   // ---------- Leaderboard ----------
   async function loadLeaderboard() {
@@ -794,13 +787,7 @@
   async function startMicLevel() {
     try {
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: { ideal: 48000 }
-        }
+        audio: { channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:{ideal:48000} }
       });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioCtx.createAnalyser();
