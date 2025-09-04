@@ -689,4 +689,52 @@
   els.matrixModal?.addEventListener("click", (e)=>{ const body=els.matrixModal.querySelector(".modal-body"); if (!body || !e.target) return; if (!body.contains(e.target)) closeMatrix(); });
   window.addEventListener("keydown", (e)=>{ if (e.key==='Escape' && els.matrixModal?.classList.contains('show')) closeMatrix(); });
 
+// ---------- Mic Level Meter ----------
+let audioCtx, analyser, micSrc;
+let levelTimer;
+
+async function startMicLevel() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+
+    micSrc = audioCtx.createMediaStreamSource(stream);
+    micSrc.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.fftSize);
+
+    function update() {
+      analyser.getByteTimeDomainData(dataArray);
+      let sumSq = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const val = (dataArray[i] - 128) / 128.0;
+        sumSq += val * val;
+      }
+      const rms = Math.sqrt(sumSq / dataArray.length);
+      const db = 20 * Math.log10(rms || 0.00001);
+
+      const bar = document.getElementById("micBar");
+      const dbLabel = document.getElementById("micDb");
+      if (bar) bar.style.width = Math.min(100, Math.max(0, (rms * 400))) + "%";
+      if (dbLabel) dbLabel.textContent = db.toFixed(0) + " dB";
+
+      levelTimer = requestAnimationFrame(update);
+    }
+    update();
+  } catch (e) {
+    console.warn("[MicLevel] 마이크 접근 실패:", e);
+  }
+}
+
+function stopMicLevel() {
+  if (levelTimer) cancelAnimationFrame(levelTimer);
+  if (audioCtx) {
+    try { audioCtx.close(); } catch(_) {}
+  }
+  audioCtx = null; analyser = null; micSrc = null;
+}
+
+
 })();
