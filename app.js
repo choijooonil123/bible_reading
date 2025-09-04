@@ -229,7 +229,8 @@
       try {
         await db.collection("users").doc(user.uid).collection("progress").doc(bookId)
           .set({ readChapters: Array.from(state.progress[bookId].readChapters) }, { merge: true });
-        await db.collection("users").doc(user.uid)
+        await db.collection("users").doc(u
+ser.uid)
           .set({ chaptersRead: firebase.firestore.FieldValue.increment(1),
                  updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
         state.myStats.chaptersRead += 1;
@@ -376,11 +377,11 @@
     return r;
   };
 
-  // 모드 프로파일 (빠름/보통/느긋함)
+  // 모드 프로파일 (빠름/보통/느긋함) — 느긋함만 살짝 완화
   const RECOG_PROFILES = {
     fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300 },
     normal: { shortLen:30, mediumLen:60, minRatioShort:0.92, minRatioMedium:0.90, minRatioLong:0.88, holdMs:500, cooldownMs:700, postAdvanceDelayMs:400 },
-    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.88, minRatioMedium:0.86, minRatioLong:0.84, holdMs:600, cooldownMs:800, postAdvanceDelayMs:500 }
+    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.86, minRatioMedium:0.84, minRatioLong:0.80, holdMs:550, cooldownMs:750, postAdvanceDelayMs:500 }
   };
   let MATCH_PROFILE = RECOG_PROFILES.normal;
 
@@ -449,9 +450,9 @@
       .replace(/\b(영|공|하나|한|둘|두|셋|세|넷|네|다섯|여섯|일곱|여덟|아홉|열)\b/g,(m)=>String(NUM_KO[m] ?? m));
   }
 
-  // v3: 불용어/발음치환 기본 OFF (과매칭 방지)
+  // v3: 불용어 제거는 OFF, 발음 보정은 ON
   const USE_STOPWORD_STRIP = false;
-  const USE_PRONUN_HEUR   = false;
+  const USE_PRONUN_HEUR   = true;  // '의'≈'에' 등 한국어 발음 보정 적용
   const STOPWORDS = /(\b|)(은|는|이|가|을|를|에|에서|으로|와|과|도|만|까지|부터|로서|보다|에게|께|마다|처럼|뿐|이라|거나|하며|하고)(\b|)/g;
   const pronunciationHeuristics = s => s.replace(/의/g,"에");
 
@@ -470,7 +471,7 @@
     return t;
   }
 
-  // 연속(prefix) 매칭만 허용: spoken 시작 오프셋 0..5 탐색
+  // 타이트한 연속(prefix) 매칭 (기존)
   function matchedPrefixLenContiguous(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return 0;
     let best = 0;
@@ -485,6 +486,43 @@
       if (best >= targetJamo.length) break;
     }
     return best;
+  }
+
+  /* 관대한 연속 매칭:
+     - 첫 글자부터 이어서 읽되, 일정 간격마다 1~2글자 실수/누락 허용
+     - 길이에 비례해 허용오류 수 자동 설정
+  */
+  function softPrefixProgress(targetJamo, spokenJamo){
+    if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
+
+    const L = targetJamo.length;
+    let ti = 0, si = 0, matched = 0, errors = 0, skips = 0;
+
+    const MAX_ERR   = Math.min(5, Math.floor(L / 12) + 1); // 12자당 1개
+    const MAX_SKIPS = Math.min(3, Math.floor(L / 25) + 1); // 25자당 1개
+
+    while (ti < L && si < spokenJamo.length){
+      if (targetJamo[ti] === spokenJamo[si]) {
+        ti++; si++; matched++;
+        continue;
+      }
+      if (errors < MAX_ERR){ // 치환 허용
+        errors++; ti++; si++; matched++;
+        continue;
+      }
+      if (skips < MAX_SKIPS && si+1 < spokenJamo.length && targetJamo[ti] === spokenJamo[si+1]) {
+        si++; skips++; // spoken 한 글자 스킵
+        continue;
+      }
+      if (skips < MAX_SKIPS && ti+1 < L && targetJamo[ti+1] === spokenJamo[si]) {
+        ti++; skips++; // target 한 글자 스킵
+        matched++;
+        continue;
+      }
+      break;
+    }
+    const ratio = L ? matched / L : 0;
+    return { chars: matched, ratio };
   }
 
   function paintRead(prefixLen){
@@ -522,25 +560,24 @@
       (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
                                        MATCH_PROFILE.minRatioLong;
 
-    let bestPref = 0;
+    // <<< 관대한 매칭 사용
+    let best = { chars:0, ratio:0 };
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
-      const pref = matchedPrefixLenContiguous(targetJ, spokenJ);
-      if (pref > bestPref) bestPref = pref;
+      const cur = softPrefixProgress(targetJ, spokenJ);
+      if (cur.chars > best.chars) best = cur;
     }
+    paintRead(best.chars);
+    const ratio = best.ratio;
 
-    paintRead(bestPref);
-
-    const ratio = L ? bestPref / L : 0;
     const now = Date.now();
-    if (bestPref > lastPrefix){ stableSince = now; lastPrefix = bestPref; }
+    if (best.chars > lastPrefix){ stableSince = now; lastPrefix = best.chars; }
 
     const holdOk = (now - stableSince) >= MATCH_PROFILE.holdMs;
     const coolOk = (now - lastCompleteTs) >= MATCH_PROFILE.cooldownMs;
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
     const longHoldOk = (now - stableSince) >= Math.max(MATCH_PROFILE.holdMs, FINAL_GRACE_MS);
 
-    // final이 오거나, 충분히 안정되었으면 완료 처리
     if (ratio >= minRatio && holdOk && coolOk && (isFinal || longHoldOk)){
       lastCompleteTs = now;
       completeVerseWithProfile();
