@@ -1,4 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동시 음성 재시작 + 마이크레벨 + 진도저장
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3-stable) + 자동이동 시 마이크 유지 + 마이크레벨 + 진도저장
    - 표시이름(displayName): Firebase Auth 프로필에만 (선택 입력 시) 갱신
    - 닉네임(nickname): Firestore users/{uid}.nickname 에 저장(선택 입력 시), 순위표 표시용
 */
@@ -354,6 +354,7 @@
 
   function updateVerseText() {
     const v = state.verses[state.currentVerseIdx] || "";
+    paintedPrefix = 0; // 새 절로 바뀌면 화면 채움 초기화
     els.locLabel && (els.locLabel.textContent =
       `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx + 1}절`);
     if (els.verseText) {
@@ -377,6 +378,52 @@
     try { r.maxAlternatives = 3; } catch(_) {}
     return r;
   };
+
+  // ---- 모바일 환경 가드 & 마이크 워밍업 ----
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+  const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
+  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
+
+  function supportsSR() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+  function envGuardBeforeStart() {
+    if (!supportsSR()) {
+      alert("이 브라우저는 음성인식을 지원하지 않습니다. iOS는 Safari, Android는 Chrome을 사용해 주세요.");
+      return false;
+    }
+    if (!isSecure) {
+      alert("음성인식은 HTTPS에서만 안정적으로 동작합니다. https 주소로 접속해 주세요.");
+      return false;
+    }
+    if (isIOS && isStandalone) {
+      alert("iOS 홈화면(PWA) 모드에서는 음성인식이 동작하지 않습니다. Safari 앱에서 이 페이지를 열어 주세요.");
+      return false;
+    }
+    return true;
+  }
+  let micPrimed = false;
+  async function primeMicOnce() {
+    if (micPrimed) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: { ideal: 48000 }
+        }
+      });
+      stream.getTracks().forEach(t => t.stop());
+      micPrimed = true;
+    } catch (e) {
+      console.warn("[PrimeMic] 실패:", e);
+      alert("마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해 주세요.");
+      throw e;
+    }
+  }
+  // ----------------------------------------
 
   // 모드 프로파일 (조정된 임계값)
   const RECOG_PROFILES = {
@@ -472,6 +519,10 @@
     return t;
   }
 
+  // ---- 채움/무시 타이머 상태 ----
+  let paintedPrefix = 0;   // 화면에 채운(확정) 글자 길이
+  let ignoreUntilTs = 0;   // 절 전환 직후 잠시 무시할 시간 (ms)
+
   // 관대한 연속(prefix) 매칭
   function softPrefixProgress(targetJamo, spokenJamo){
     if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
@@ -483,27 +534,30 @@
     const MAX_SKIPS = Math.min(3, Math.floor(L / 25) + 1); // 25자당 1개
 
     while (ti < L && si < spokenJamo.length){
-      if (targetJamo[ti] === spokenJamo[si]) {
-        ti++; si++; matched++;
-        continue;
-      }
-      if (errors < MAX_ERR){ // 치환 허용
-        errors++; ti++; si++; matched++;
-        continue;
-      }
-      if (skips < MAX_SKIPS && si+1 < spokenJamo.length && targetJamo[ti] === spokenJamo[si+1]) {
-        si++; skips++; // spoken 한 글자 스킵
-        continue;
-      }
-      if (skips < MAX_SKIPS && ti+1 < L && targetJamo[ti+1] === spokenJamo[si]) {
-        ti++; skips++; // target 한 글자 스킵
-        matched++;
-        continue;
-      }
+      if (targetJamo[ti] === spokenJamo[si]) { ti++; si++; matched++; continue; }
+      if (errors < MAX_ERR){ errors++; ti++; si++; matched++; continue; }
+      if (skips < MAX_SKIPS && si+1 < spokenJamo.length && targetJamo[ti] === spokenJamo[si+1]) { si++; skips++; continue; }
+      if (skips < MAX_SKIPS && ti+1 < L && targetJamo[ti+1] === spokenJamo[si]) { ti++; skips++; matched++; continue; }
       break;
     }
     const ratio = L ? matched / L : 0;
     return { chars: matched, ratio };
+  }
+
+  function matchedPrefixLenContiguous(targetJamo, spokenJamo){
+    if (!targetJamo || !spokenJamo) return 0;
+    let best = 0;
+    const maxShift = Math.min(5, Math.max(0, spokenJamo.length-1));
+    for (let shift = 0; shift <= maxShift; shift++){
+      let ti = 0, si = shift, cur = 0;
+      while (ti < targetJamo.length && si < spokenJamo.length){
+        if (targetJamo[ti] !== spokenJamo[si]) break;
+        cur++; ti++; si++;
+      }
+      if (cur > best) best = cur;
+      if (best >= targetJamo.length) break;
+    }
+    return best;
   }
 
   function paintRead(prefixLen){
@@ -534,6 +588,9 @@
     const v = state.verses[state.currentVerseIdx] || "";
     if (!v) return;
 
+    const nowTs = Date.now();
+    if (nowTs < ignoreUntilTs) return; // 절 전환 직후 잠시 무시
+
     const targetJ = normalizeToJamo(v, false);
     const L = targetJ.length;
     const minRatio =
@@ -541,16 +598,24 @@
       (L <= MATCH_PROFILE.mediumLen) ? MATCH_PROFILE.minRatioMedium :
                                        MATCH_PROFILE.minRatioLong;
 
-    // 관대한 매칭 사용
+    // 관대한 매칭(완료 판정) + 보수적 매칭(화면 채움)
     let best = { chars:0, ratio:0 };
+    let strictMax = 0;
     for (const tr of bestTranscripts(evt)){
       const spokenJ = normalizeToJamo(tr, true);
-      const cur = softPrefixProgress(targetJ, spokenJ);
-      if (cur.chars > best.chars) best = cur;
+      const curSoft   = softPrefixProgress(targetJ, spokenJ);
+      const curStrict = matchedPrefixLenContiguous(targetJ, spokenJ);
+      if (curSoft.chars > best.chars) best = curSoft;
+      if (curStrict > strictMax) strictMax = curStrict;
     }
-    paintRead(best.chars);
-    const ratio = best.ratio;
 
+    // 채움은 연속 prefix 기준 + 프레임당 2글자 제한
+    const stepLimited = Math.min(strictMax, paintedPrefix + 2);
+    const paintLen = Math.min(stepLimited, L);
+    paintRead(paintLen);
+    paintedPrefix = paintLen;
+
+    const ratio = best.ratio;
     const now = Date.now();
     if (best.chars > lastPrefix){ stableSince = now; lastPrefix = best.chars; }
 
@@ -559,7 +624,10 @@
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
     const longHoldOk = (now - stableSince) >= Math.max(MATCH_PROFILE.holdMs, FINAL_GRACE_MS);
 
-    if (ratio >= minRatio && holdOk && coolOk && (isFinal || longHoldOk)){
+    const finalOk  = isFinal && ratio >= minRatio && coolOk;
+    const stableOk = ratio >= minRatio && holdOk && coolOk;
+    const graceOk  = ratio >= minRatio && longHoldOk && coolOk;
+    if (finalOk || stableOk || graceOk){
       lastCompleteTs = now;
       completeVerseWithProfile();
     }
@@ -595,9 +663,7 @@
     await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
 
     if (auto) {
-      state.suppressAutoRestart = true;
-      stopListening(false);
-
+      // 마이크는 끄지 않고 유지
       const moved = await advanceToNextVerse();
       if (!moved) {
         await markChapterDone(b.id, state.currentChapter);
@@ -605,16 +671,18 @@
         state.myStats.last.chapter = state.currentChapter;
         saveLastPosition();
         alert("장 완료! 다음 장으로 이동하세요.");
-        state.suppressAutoRestart = false;
         return;
       }
-
-      stableSince = 0; lastPrefix = 0;
-      await hardRestartRecognition(250);
+      // 다음 절 시작 시 잔여 입력을 걸러내기 위한 짧은 무시창
+      stableSince = 0; lastPrefix = 0; paintedPrefix = 0;
+      ignoreUntilTs = Date.now() + 400;
     }
   }
 
-  function startListening(showAlert=true){
+  async function startListening(showAlert=true){
+    // 환경 체크 (iOS PWA/HTTP/미지원 브라우저)
+    if (!envGuardBeforeStart()) return;
+
     if (state.listening) return;
     state.recog = getRecognition();
     if (!state.recog){
@@ -625,14 +693,28 @@
     stableSince=0; lastPrefix=0;
 
     state.recog.onresult = onSpeechResult;
-
     state.recog.onend = () => {
       if (state.listening && !state.suppressAutoRestart) {
         try { state.recog.start(); } catch(_) {}
       }
     };
+    state.recog.onerror = (e) => {
+      console.warn("[SR] error:", e?.error, e);
+      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        alert("마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해 주세요.");
+        stopListening();
+        return;
+      }
+      if (e?.error === "no-speech") { try { state.recog.start(); } catch(_) {} return; }
+      if (e?.error === "aborted") return;
+      if (e?.error === "network") { alert("네트워크 문제로 음성인식 연결에 실패했습니다."); return; }
+      try { state.recog.start(); } catch(_) {}
+    };
 
     try {
+      // iOS/Android 모두 첫 시작 때 마이크 워밍업이 도움이 됨
+      await primeMicOnce();
+
       state.recog.start();
       state.listening = true;
       els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
@@ -644,7 +726,8 @@
 
   function stopListening(resetBtn=true){
     if (state.recog){
-      try{ state.recog.onresult=null; state.recog.onend=null; state.recog.stop(); }catch(_){}
+      try{ state.recog.onresult=null; state.recog.onend=null; state.recog.onerror=null; state.recog.abort?.(); }catch(_){}
+      try{ state.recog.stop?.(); }catch(_){}
     }
     state.listening=false;
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
@@ -710,7 +793,15 @@
   let audioCtx, analyser, micSrc, levelTimer, micStream;
   async function startMicLevel() {
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: { ideal: 48000 }
+        }
+      });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
