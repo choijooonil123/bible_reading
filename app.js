@@ -1,8 +1,4 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(버튼전용 ON/OFF)
-   - 튜닝 패널 유지: SUB_NEAR / SUB_DIST / DEL_COST / INS_COST
-   - 자동이동 시 마이크는 건드리지 않음(버튼으로만 ON/OFF)
-   - 화면 채우기는 “앞서 가지 않게”(엄격 접두 기반)
-*/
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(관대·안정) + 자동이동 시 마이크 유지 + 크롬 수음개선 + 튜닝패널 + 진도저장 */
 (() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
@@ -174,7 +170,11 @@
     showScreen("app");
     els.signedIn?.classList.remove("hidden");
     els.userName && (els.userName.textContent = u.displayName || u.email || "사용자");
-    els.userPhoto && (els.userPhoto.src = u.photoURL || "https://avatars.githubusercontent.com/u/9919?s=200&v=4");
+    // 기본 GitHub 로고 숨기고, 사용자 photoURL 있을 때만 표시
+    if (els.userPhoto) {
+      if (u.photoURL) { els.userPhoto.src = u.photoURL; els.userPhoto.classList.remove('hidden'); }
+      else { els.userPhoto.classList.add('hidden'); }
+    }
 
     try { await ensureUserDoc(u); } catch (e) {}
     try { await loadMyStats(); } catch (e) {}
@@ -383,7 +383,47 @@
     }
   }
 
-  // ---------- Speech Recognition ----------
+  // ---------- Chrome 친화적 마이크 예열 ----------
+  let primeStream;
+  async function primeMicrophone() {
+    if (primeStream && primeStream.getTracks().some(t=>t.readyState==="live")) return primeStream;
+    const constraints = {
+      audio: {
+        channelCount: { ideal: 1 },
+        sampleRate:   { ideal: 48000 },
+        sampleSize:   { ideal: 16 },
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl:  { ideal: true },
+        googHighpassFilter: true
+      },
+      video: false
+    };
+    try {
+      primeStream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (window.AudioContext || window.webkitAudioContext) {
+        try {
+          const ac = new (window.AudioContext || window.webkitAudioContext)();
+          if (ac.state === "suspended") await ac.resume();
+          const src = ac.createMediaStreamSource(primeStream);
+          const dst = ac.createGain();
+          src.connect(dst);
+          await new Promise(r => setTimeout(r, 30));
+          ac.close();
+        } catch(_) {}
+      }
+      return primeStream;
+    } catch (e) {
+      console.warn("[PrimeMic] 실패:", e);
+      return null;
+    }
+  }
+  function releasePrimeMic() {
+    try { if (primeStream) primeStream.getTracks().forEach(t=>t.stop()); } catch(_) {}
+    primeStream = null;
+  }
+
+  // ---------- Speech Recognition 기본 ----------
   const getRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
@@ -391,7 +431,8 @@
     r.lang = 'ko-KR';
     r.continuous = true;
     r.interimResults = true;
-    try { r.maxAlternatives = 3; } catch(_) {}
+    try { r.maxAlternatives = 4; } catch(_) {}
+    try { r.audioTrackConstraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }; } catch(_){}
     return r;
   };
 
@@ -510,7 +551,6 @@
 
     const T = targetJamo, S = spokenJamo;
     const n = T.length,  m = S.length;
-
     const BAND = Math.min(10, Math.max(6, Math.floor(Math.max(n,m)/10)));
 
     let prev = new Float32Array(m+1);
@@ -563,7 +603,7 @@
     return best;
   }
 
-  // ---- 튜닝값 합성(패널/전역/URL/LS 지원, UI 변경 없음)
+  // ---- 튜닝값 합성(패널/전역/URL/LS 지원)
   function getTunedOptsWithProfile(profile){
     const out = { ...profile };
     try{
@@ -591,7 +631,7 @@
 
   // 안정/완료 판정 상태
   let stableSince = 0, lastCompleteTs = 0, lastPrefix = 0;
-  let paintedHold = 0; // UI용 보조(필요시)
+  let paintedHold = 0;
   let ignoreUntilTs = 0;
 
   function bestTranscripts(evt){
@@ -691,6 +731,11 @@
 
   async function startListening(showAlert=true){
     if (state.listening) return;
+
+    // 마이크 예열(권한/경로 고정) → Chrome 안정성↑
+    await primeMicrophone();
+
+    // SR 가용성
     if (!supportsSR()) {
       els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(Chrome/Safari 권장)");
       if (showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다.");
@@ -711,21 +756,28 @@
 
     state.recog.onresult = onSpeechResult;
 
-    // 버튼으로 켠 상태에서는 끊겨도 내부 재기동(버튼 상태는 그대로)
-    state.recog.onend = () => {
+    // 버튼 ON 상태면 내부 재기동(사용자 제어 원칙 유지)
+    const safeRestart = () => {
       if (state.listening) {
         try { state.recog.start(); } catch(_) {}
       } else {
-        // 사용자가 끈 경우
         els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
         stopMicLevel();
         setModeRadiosDisabled(false);
         setTuningDisabled(false);
       }
     };
+    state.recog.onend = safeRestart;
+    state.recog.onaudioend = safeRestart;
 
     state.recog.onerror = (e) => {
       console.warn("[SR] error:", e?.error, e);
+      if (state.listening && (e?.error === "no-speech" || e?.error === "audio-capture")) {
+        setTimeout(() => { try { state.recog.start(); } catch(_) {} }, 120);
+      }
+      if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        alert("마이크 권한이 필요합니다. 주소창 오른쪽의 마이크 아이콘을 확인해주세요.");
+      }
     };
 
     try {
@@ -750,6 +802,7 @@
     stopMicLevel();
     setModeRadiosDisabled(false);
     setTuningDisabled(false);
+    releasePrimeMic(); // 예열 해제
   }
 
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
@@ -869,23 +922,10 @@
     if (els.micDb) els.micDb.textContent = "-∞ dB";
   }
 
-  // ---------- 튜닝 패널(UI 유지, 다른 DOM 불변) ----------
+  // ---------- 튜닝 패널 (디자인 전반 변경 없음) ----------
   const TUNING_LS_KEY = "recogTuningV1";
-  function loadTuning(){
-    try { return JSON.parse(localStorage.getItem(TUNING_LS_KEY) || "{}"); } catch(_) { return {}; }
-  }
-  function saveTuning(obj){
-    localStorage.setItem(TUNING_LS_KEY, JSON.stringify(obj||{}));
-  }
-  function getTunedOptsWithLSorProfile(profile){
-    const t = loadTuning();
-    return {
-      SUB_NEAR: (t.SUB_NEAR != null ? Number(t.SUB_NEAR) : profile.SUB_NEAR),
-      SUB_DIST: (t.SUB_DIST != null ? Number(t.SUB_DIST) : profile.SUB_DIST),
-      DEL_COST: (t.DEL_COST != null ? Number(t.DEL_COST) : profile.DEL_COST),
-      INS_COST: (t.INS_COST != null ? Number(t.INS_COST) : profile.INS_COST),
-    };
-  }
+  function loadTuning(){ try { return JSON.parse(localStorage.getItem(TUNING_LS_KEY) || "{}"); } catch(_) { return {}; } }
+  function saveTuning(obj){ localStorage.setItem(TUNING_LS_KEY, JSON.stringify(obj||{})); }
 
   let tuningPanel, tuningInputs = {};
   (function createTuningPanel(){
@@ -934,22 +974,21 @@
       });
     }
     renderPlaceholders();
+    window.__renderTuningPlaceholders = renderPlaceholders;
 
     document.getElementById("tuneReset").addEventListener("click", ()=>{
       saveTuning({});
       ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{ tuningInputs[k].value = ""; });
     });
 
-    window.__renderTuningPlaceholders = renderPlaceholders;
-
-    // 패널이 FAB을 가리지 않도록 안전 위치 계산(디자인 변경 없음)
+    // 패널이 FAB(마이크 버튼)을 가리지 않도록 안전 위치 계산
     function positionTuningPanel(){
       if (!tuningPanel) return;
       const fabCol = document.querySelector('.fab-col');
-      let safeBottom = 10; // 기본
+      let safeBottom = 10;
       if (fabCol) {
         const r = fabCol.getBoundingClientRect();
-        safeBottom = Math.max(10, window.innerHeight - r.top + 12); // FAB 위로 12px 여유
+        safeBottom = Math.max(10, window.innerHeight - r.top + 12);
       }
       tuningPanel.style.bottom = safeBottom + 'px';
       tuningPanel.style.right = '10px';
