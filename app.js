@@ -1,6 +1,7 @@
-/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(v3, 버튼전용ON/OFF)
-   - 자동이동 시 SR 건드리지 않음, 마이크 ON 동안 모드/튜닝 변경 금지
-   - 가중 접두 정렬(밴디드 DP) + 옵션화(SUB_NEAR/SUB_DIST/DEL_COST/INS_COST) + 튜닝 패널
+/* 말씀읽기APP — Email/Password 로그인 + bible.json + 음성인식(버튼전용 ON/OFF)
+   - 튜닝 패널: SUB_NEAR / SUB_DIST / DEL_COST / INS_COST (UI 유지)
+   - 자동이동 시 마이크는 건드리지 않음(버튼으로만 ON/OFF)
+   - 표시 채우기는 “앞서 가지 않게” (엄격 접두 기준)
 */
 (() => {
   // ---------- PWA ----------
@@ -17,7 +18,6 @@
   function initFirebase() {
     if (!window.firebaseConfig || typeof firebase === "undefined") {
       console.error("[Firebase] SDK/config 누락");
-      alert("Firebase 설정이 로드되지 않았습니다. firebaseConfig.js를 확인하세요.");
       return;
     }
     firebase.initializeApp(window.firebaseConfig);
@@ -76,7 +76,7 @@
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
 
-    // (선택) 모드 라디오
+    // (선택) 모드 라디오가 있다면 자동 감지
     modeRadios: Array.from(document.querySelectorAll("input[name=recogMode]")),
 
     // (선택) 마이크 레벨 UI
@@ -129,8 +129,7 @@
   }
 
   // ---------- 회원가입 / 로그인 / 로그아웃 ----------
-  els.btnSignup?.addEventListener("click", (e) => withBusy(els.btnSignup, async () => {
-    e?.preventDefault(); e?.stopPropagation();
+  els.btnSignup?.addEventListener("click", () => withBusy(els.btnSignup, async () => {
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
     const name  = (els.displayName.value || "").trim();
@@ -148,8 +147,7 @@
     }
   }));
 
-  els.btnLogin?.addEventListener("click", (e) => withBusy(els.btnLogin, async () => {
-    e?.preventDefault(); e?.stopPropagation();
+  els.btnLogin?.addEventListener("click", () => withBusy(els.btnLogin, async () => {
     const email = (els.email.value || "").trim();
     const pw    = (els.password.value || "").trim();
     const name  = (els.displayName.value || "").trim();
@@ -361,7 +359,7 @@
     state.myStats.last = { bookKo: b.ko, chapter, verse: 1 }; saveLastPosition();
   }
 
-  // ---------- 표시 업데이트 ----------
+  // ---------- 표시 업데이트 (앞서 가지 않게) ----------
   let paintedPrefix = 0;
   function updateVerseText() {
     const v = state.verses[state.currentVerseIdx] || "";
@@ -377,7 +375,6 @@
     if (els.verseGrid) { [...els.verseGrid.children].forEach((btn, idx) =>
       btn.classList.toggle("active", idx===state.currentVerseIdx)); }
   }
-
   function paintRead(prefixLen){
     if (!els.verseText) return;
     const spans = els.verseText.childNodes;
@@ -398,47 +395,11 @@
     return r;
   };
 
-  // 환경 가드
-  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-  const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator.standalone === true;
-  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
-  function supportsSR(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
-  function envGuardBeforeStart() {
-    if (!supportsSR()) { alert("이 브라우저는 음성인식을 지원하지 않습니다."); return false; }
-    if (!isSecure) { alert("음성인식은 HTTPS에서만 동작합니다."); return false; }
-    if (isIOS && isStandalone) { alert("iOS 홈화면(PWA)에서는 음성인식이 동작하지 않습니다. Safari 앱에서 열어주세요."); return false; }
-    return true;
-  }
-  let micPrimed=false;
-  async function primeMicOnce(){
-    if (micPrimed) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:{ideal:48000} }
-    });
-    stream.getTracks().forEach(t=>t.stop());
-    micPrimed=true;
-  }
-
-  // ---- 프로파일(모드) & 비용옵션
+  // ---- 프로파일(모드)
   const RECOG_PROFILES = {
-    fast: {
-      shortLen:30, mediumLen:60,
-      minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90,
-      holdMs:400, cooldownMs:600, postAdvanceDelayMs:300,
-      SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55
-    },
-    normal: {
-      shortLen:30, mediumLen:60,
-      minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84,
-      holdMs:480, cooldownMs:650, postAdvanceDelayMs:400,
-      SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55
-    },
-    lenient: {
-      shortLen:30, mediumLen:60,
-      minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76,
-      holdMs:520, cooldownMs:700, postAdvanceDelayMs:500,
-      SUB_NEAR:0.28, SUB_DIST:0.85, DEL_COST:0.45, INS_COST:0.45
-    }
+    fast:   { shortLen:30, mediumLen:60, minRatioShort:0.94, minRatioMedium:0.92, minRatioLong:0.90, holdMs:400, cooldownMs:600, postAdvanceDelayMs:300, SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55 },
+    normal: { shortLen:30, mediumLen:60, minRatioShort:0.90, minRatioMedium:0.88, minRatioLong:0.84, holdMs:480, cooldownMs:650, postAdvanceDelayMs:400, SUB_NEAR:0.35, SUB_DIST:1.0, DEL_COST:0.55, INS_COST:0.55 },
+    lenient:{ shortLen:30, mediumLen:60, minRatioShort:0.84, minRatioMedium:0.82, minRatioLong:0.76, holdMs:520, cooldownMs:700, postAdvanceDelayMs:500, SUB_NEAR:0.28, SUB_DIST:0.85, DEL_COST:0.45, INS_COST:0.45 }
   };
   let currentMode = (document.querySelector("input[name=recogMode]:checked")?.value) || "normal";
   let MATCH_PROFILE = RECOG_PROFILES[currentMode];
@@ -448,6 +409,7 @@
     currentMode = document.querySelector("input[name=recogMode]:checked")?.value || currentMode;
     MATCH_PROFILE = RECOG_PROFILES[currentMode] || RECOG_PROFILES.normal;
     console.log("[RecogMode] 변경:", currentMode, MATCH_PROFILE);
+    if (window.__renderTuningPlaceholders) window.__renderTuningPlaceholders();
   }
   function setModeRadiosDisabled(disabled){
     (els.modeRadios||[]).forEach(r => r.disabled = disabled);
@@ -460,11 +422,10 @@
         return;
       }
       applyModeFromUI();
-      if (window.__renderTuningPlaceholders) window.__renderTuningPlaceholders(); // 튜닝 패널 placeholder 갱신
     });
   });
 
-  // ---- 한글 자모 유틸
+  // ---- 한글 자모 / 정규화
   const CHO = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
   const JUNG = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
   const JONG = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
@@ -527,7 +488,7 @@
     return t;
   }
 
-  // ---- 알고리즘: (1) 관대한 접두 정렬(옵션 지원)
+  // ---- 알고리즘: (1) 관대한 접두(옵션 지원)
   function softPrefixProgress(targetJamo, spokenJamo, opts={}) {
     if (!targetJamo || !spokenJamo) return { chars:0, ratio:0 };
 
@@ -604,6 +565,7 @@
 
   // 안정/완료 판정 상태
   let stableSince = 0, lastCompleteTs = 0, lastPrefix = 0;
+  let paintedHold = 0; // UI용 보조
   let ignoreUntilTs = 0;
 
   function bestTranscripts(evt){
@@ -642,7 +604,7 @@
       if (curStrict > strictMax) strictMax = curStrict;
     }
 
-    // 화면 채움은 "엄격" 결과를 기준으로 한 스텝씩만 전진
+    // 화면 채움은 "엄격" 결과를 기준으로 과속 방지
     const stepLimited = Math.min(strictMax, paintedPrefix + 2);
     const paintLen = Math.min(stepLimited, L);
     paintRead(paintLen);
@@ -657,16 +619,13 @@
     const isFinal = evt.results[evt.results.length - 1]?.isFinal;
     const longHoldOk = (now - stableSince) >= Math.max(MATCH_PROFILE.holdMs, FINAL_GRACE_MS);
 
-    const finalOk  = isFinal && ratio >= minRatio && coolOk;
-    const stableOk = ratio >= minRatio && holdOk && coolOk;
-    const graceOk  = ratio >= minRatio && longHoldOk && coolOk;
-    if (finalOk || stableOk || graceOk){
+    if (ratio >= minRatio && coolOk && (isFinal || holdOk || longHoldOk)){
       lastCompleteTs = now;
       completeVerseWithProfile();
     }
   }
 
-  // ---------- 자동이동(마이크 건드리지 않음) ----------
+  // ---------- 자동이동(마이크는 건드리지 않음) ----------
   async function advanceToNextVerse() {
     if (state.currentVerseIdx < state.verses.length - 1) {
       state.currentVerseIdx++;
@@ -682,6 +641,7 @@
     await incVersesRead(1);
     const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
     const b = getBookByKo(state.currentBookKo);
+
     await new Promise(r => setTimeout(r, MATCH_PROFILE.postAdvanceDelayMs));
 
     if (auto) {
@@ -694,49 +654,48 @@
         alert("장 완료! 다음 장으로 이동하세요.");
         return;
       }
-      // 마이크는 그대로 두고, 잔여 입력만 잠시 무시
+      // SR은 그대로 유지, 잔여 중간결과만 잠깐 무시
       stableSince = 0; lastPrefix = 0; paintedPrefix = 0;
       ignoreUntilTs = Date.now() + 400;
     }
   }
 
   // ---------- Mic control: 버튼으로만 ON/OFF ----------
-  async function startListening(showAlert=true){
-    if (!envGuardBeforeStart()) return;
-    if (state.listening) return;
+  function supportsSR(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
 
-    state.recog = getRecognition();
-    if (!state.recog){
+  async function startListening(showAlert=true){
+    if (state.listening) return;
+    if (!supportsSR()) {
       els.listenHint && (els.listenHint.innerHTML="⚠️ 음성인식 미지원(Chrome/Safari 권장)");
       if (showAlert) alert("이 브라우저는 음성인식을 지원하지 않습니다.");
       return;
     }
 
-    // 모드/튜닝 패널 잠금
+    state.recog = getRecognition();
+    if (!state.recog){
+      if (showAlert) alert("음성인식 초기화 실패");
+      return;
+    }
+
+    // 모드/튜닝 잠금
     setModeRadiosDisabled(true);
     setTuningDisabled(true);
 
-    stableSince=0; lastPrefix=0;
+    stableSince=0; lastPrefix=0; paintedPrefix=0;
 
     state.recog.onresult = onSpeechResult;
-
-    // 자동 재시작 없음: onend는 UI만 반영
     state.recog.onend = () => {
       state.listening = false;
       els.btnToggleMic && (els.btnToggleMic.textContent="🎙️");
       stopMicLevel();
       setModeRadiosDisabled(false);
       setTuningDisabled(false);
-      console.log("[SR] ended");
     };
-
     state.recog.onerror = (e) => {
       console.warn("[SR] error:", e?.error, e);
-      // 자동제어 없음
     };
 
     try {
-      await primeMicOnce();
       state.recog.start();
       state.listening = true;
       els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
@@ -839,9 +798,7 @@
   let audioCtx, analyser, micSrc, levelTimer, micStream;
   async function startMicLevel() {
     try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount:1, echoCancellation:true, noiseSuppression:true, autoGainControl:true, sampleRate:{ideal:48000} }
-      });
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
@@ -879,7 +836,7 @@
     if (els.micDb) els.micDb.textContent = "-∞ dB";
   }
 
-  // ---------- 튜닝 패널(네 가지 비용 값 UI) ----------
+  // ---------- 튜닝 패널(UI 유지, 다른 DOM 불변) ----------
   const TUNING_LS_KEY = "recogTuningV1";
   function loadTuning(){
     try { return JSON.parse(localStorage.getItem(TUNING_LS_KEY) || "{}"); } catch(_) { return {}; }
@@ -898,7 +855,7 @@
   }
 
   let tuningPanel, tuningInputs = {};
-  function createTuningPanel(){
+  (function createTuningPanel(){
     if (tuningPanel) return;
     tuningPanel = document.createElement("div");
     tuningPanel.id = "recog-tuning";
@@ -918,7 +875,7 @@
           <input id="tune_${k}" type="number" step="0.01" min="0" max="2" style="width:100%; margin-top:2px; border-radius:8px; border:1px solid #556; padding:6px; background:#12183a; color:#fff"/>
         </label>
       `).join("")}
-      <div style="opacity:.75">※ 값 낮을수록 더 <b>관대</b>해집니다.</div>
+      <div style="opacity:.75">※ 값 낮을수록 더 <b>관대</b>합니다.</div>
     `;
     document.body.appendChild(tuningPanel);
 
@@ -933,24 +890,25 @@
       });
     });
 
-    function renderValuesFromProfile(){
-      const defaults = RECOG_PROFILES[currentMode] || RECOG_PROFILES.normal;
-      const t = loadTuning();
+    function renderPlaceholders(){
+      const defaults = MATCH_PROFILE || {};
       ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{
-        tuningInputs[k].placeholder = String(defaults[k]);
-        tuningInputs[k].value = (t[k] != null ? t[k] : "");
+        const t = loadTuning();
+        if (tuningInputs[k]) {
+          tuningInputs[k].placeholder = (defaults[k] != null ? String(defaults[k]) : "");
+          tuningInputs[k].value = (t[k] != null ? t[k] : "");
+        }
       });
     }
-    renderValuesFromProfile();
+    renderPlaceholders();
 
     document.getElementById("tuneReset").addEventListener("click", ()=>{
       saveTuning({});
       ["SUB_NEAR","SUB_DIST","DEL_COST","INS_COST"].forEach(k=>{ tuningInputs[k].value = ""; });
     });
 
-    window.__renderTuningPlaceholders = renderValuesFromProfile;
-  }
-  createTuningPanel();
+    window.__renderTuningPlaceholders = renderPlaceholders;
+  })();
 
   function setTuningDisabled(disabled){
     if (!tuningPanel) return;
