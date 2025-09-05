@@ -1,4 +1,8 @@
-/* 말씀읽기APP — Firebase 로그인/진도저장 + bible.json + 안드로이드 최적화 음성매칭(최대 안정) */
+/* 말씀읽기APP — Firebase 로그인/진도저장 + bible.json
+   + 안드로이드 최적화 음성매칭(워치독/노리절트)
+   + 마이크는 버튼으로만 ON/OFF
+   + 절 완료시 해당 절 버튼 색 변경, 장 전체 완료시 장 버튼 색 변경
+*/
 (() => {
   // ---------- PWA ----------
   if ("serviceWorker" in navigator) {
@@ -88,6 +92,7 @@
     progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
     ignoreUntilTs: 0,  // 자동이동 직후 잠깐 무시
     paintedPrefix: 0,  // 화면 채움 경계
+    verseDoneMap: {},  // { "창세기#1": Set<number> }  완료된 절(1-based)
   };
 
   // ---------- bible.json ----------
@@ -171,7 +176,6 @@
     showScreen("app");
     els.signedIn?.classList.remove("hidden");
     els.userName && (els.userName.textContent = u.displayName || u.email || "사용자");
-    // 기본 로고 숨기고 photoURL 있을 때만 표시
     if (els.userPhoto) {
       if (u.photoURL) { els.userPhoto.src = u.photoURL; els.userPhoto.classList.remove('hidden'); }
       else { els.userPhoto.classList.add('hidden'); }
@@ -305,7 +309,8 @@
   els.bookSelect?.addEventListener("change", () => {
     state.currentBookKo = els.bookSelect.value;
     state.currentChapter = null; state.verses = []; state.currentVerseIdx = 0;
-    els.verseGrid && (els.verseGrid.innerHTML = ""); els.verseText && (els.verseText.textContent = "장과 절을 선택하세요.");
+    els.verseGrid && (els.verseGrid.innerHTML = "");
+    els.verseText && (els.verseText.textContent = "장과 절을 선택하세요.");
     buildChapterGrid();
     state.myStats.last = { bookKo: state.currentBookKo, chapter: null, verse: 0 }; saveLastPosition();
   });
@@ -314,22 +319,43 @@
     const b = getBookByKo(state.currentBookKo);
     if (!b || !els.chapterGrid) return;
     els.chapterGrid.innerHTML = "";
+
     for (let i = 1; i <= b.ch; i++) {
       const btn = document.createElement("button");
-      btn.className = "chip" + (state.progress[b.id]?.readChapters?.has(i) ? " done" : "");
+      const isDonePersist = state.progress[b.id]?.readChapters?.has(i);
+      btn.className = "chip" + (isDonePersist ? " done" : "");
       btn.textContent = i;
+
+      // 세션 중 모든 절을 완료했다면 즉시 done으로
+      if (state.currentChapter === i) {
+        const key = `${state.currentBookKo}#${i}`;
+        const set = state.verseDoneMap[key];
+        if (set && state.verses.length > 0 && set.size === state.verses.length) {
+          btn.classList.add("done");
+        }
+      }
+
       btn.addEventListener("click", () => selectChapter(i));
       if (state.currentChapter === i) btn.classList.add("active");
       els.chapterGrid.appendChild(btn);
     }
   }
 
+  function keyForChapter(){ return `${state.currentBookKo}#${state.currentChapter}`; }
+
   function buildVerseGrid() {
     if (!els.verseGrid) return;
     els.verseGrid.innerHTML = "";
+    const key = keyForChapter();
+    const doneSet = state.verseDoneMap[key] || new Set();
+
     for (let i = 1; i <= state.verses.length; i++) {
       const btn = document.createElement("button");
-      btn.className = "chip"; btn.textContent = i;
+      btn.className = "chip";
+      btn.textContent = i;
+
+      if (doneSet.has(i)) btn.classList.add("readok");
+
       btn.addEventListener("click", () => {
         state.currentVerseIdx = i - 1; updateVerseText();
         state.myStats.last.verse = i; saveLastPosition();
@@ -358,6 +384,7 @@
     buildVerseGrid();
     updateVerseText();
     state.myStats.last = { bookKo: b.ko, chapter, verse: 1 }; saveLastPosition();
+    buildChapterGrid(); // 현재 장 active/done 반영 갱신
   }
 
   // ---------- 표시 업데이트 ----------
@@ -383,7 +410,29 @@
     }
   }
 
-  // ---------- 마이크 예열 (권한/경로 고정) ----------
+  // 절 완료 표기 (버튼 색)
+  function markVerseAsDone(verseIndex1Based) {
+    const key = keyForChapter();
+    if (!state.verseDoneMap[key]) state.verseDoneMap[key] = new Set();
+    state.verseDoneMap[key].add(verseIndex1Based);
+
+    // 절 버튼 색 갱신
+    if (els.verseGrid) {
+      const btn = els.verseGrid.children[verseIndex1Based - 1];
+      if (btn) btn.classList.add("readok");
+    }
+
+    // 모든 절 완료되었으면 현재 장 버튼도 done
+    if (state.verses.length > 0 && state.verseDoneMap[key].size === state.verses.length) {
+      if (els.chapterGrid) {
+        const idx = (state.currentChapter - 1);
+        const chBtn = els.chapterGrid.children[idx];
+        if (chBtn) chBtn.classList.add("done");
+      }
+    }
+  }
+
+  // ---------- 마이크 예열 ----------
   let primeStream;
   async function primeMicrophone() {
     if (primeStream && primeStream.getTracks().some(t=>t.readyState==="live")) return primeStream;
@@ -471,14 +520,13 @@
     return decomposeJamo(t).replace(/\s+/g,"");
   }
 
-  // ---------- 매칭: 접두 커버리지 + 가중 레벤슈타인(밴드) ----------
-  // 근접 대체(모음 유사, 유성/무성, 받침 생략 등)
+  // ---------- 매칭: 접두 커버리지 + 밴드 레벤슈타인 ----------
   const NEAR = new Set([
     "ㅐ,ㅔ","ㅔ,ㅐ","ㅚ,ㅙ","ㅚ,ㅞ","ㅙ,ㅞ",
     "ㅢ,ㅣ","ㅣ,ㅢ","ㅓ,ㅗ","ㅕ,ㅛ","ㅠ,ㅡ",
     "ㄴ,ㅇ","ㅇ,ㄴ","ㅂ,ㅍ","ㅍ,ㅂ","ㅂ,ㅁ","ㅁ,ㅂ",
     "ㄷ,ㅌ","ㅌ,ㄷ","ㅅ,ㅆ","ㅆ,ㅅ",
-    "ㅎ,"," ,ㅎ" // ㅎ 탈락
+    "ㅎ,"," ,ㅎ"
   ]);
   function near(a,b){ return a===b || NEAR.has(`${a},${b}`); }
 
@@ -503,41 +551,48 @@
     return best; // 작을수록 유사
   }
 
-  // target의 앞에서부터 얼마나 덮었는지: i를 증가시키며 ED비율로 판정
   function prefixCoverage(targetJ, spokenJ){
     const n = targetJ.length;
     if (!n || !spokenJ.length) return 0;
 
     const short=30, medium=60;
-    const thrShort=0.80, thrMedium=0.78, thrLong=0.75; // 안드로이드용(조금 관대)
+    const thrShort=0.80, thrMedium=0.78, thrLong=0.75;
     let bestI=0;
     for(let i=1;i<=n;i++){
       const slice = targetJ.slice(0,i);
       const band = Math.min(12, Math.max(6, Math.floor(i/8)));
       const ed = bandedEdit(slice, spokenJ, band);
-      const okRatio = 1 - (ed / Math.max(1,i)); // 1: 완전일치
+      const okRatio = 1 - (ed / Math.max(1,i));
       const thr = (i<=short)?thrShort : (i<=medium?thrMedium:thrLong);
       if (okRatio >= thr) bestI = i;
-      // 최적화: 연속 실패시 살짝 건너뛰기
       if (i - bestI > 20) break;
     }
     return bestI;
   }
 
-  // ---------- SpeechRecognition 루프(안드로이드 최적화) ----------
+  // ---------- SpeechRecognition (Android 최적화 루프) ----------
   function supportsSR(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
   function makeRecognizer(){
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return null;
     const r = new SR();
     r.lang = 'ko-KR';
-    r.continuous = !IS_ANDROID;        // 안드로이드는 false가 더 안정
+    r.continuous = !IS_ANDROID;               // 안드로이드는 false가 안정
     r.interimResults = !IS_ANDROID ? true : false; // 안드로이드는 final 위주
     try { r.maxAlternatives = 4; } catch(_) {}
     return r;
   }
 
   let loopTimer=null;
+
+  // ★ Android Chrome 139 안정화를 위한 감시 타이머
+  const ANDROID_WATCHDOG_MS  = 6500; // 시작 후 이 시간 안에 결과가 없으면 재기동
+  const ANDROID_NORESULT_MS  = 4200; // 진행 중 결과가 너무 오래 안 오면 재기동
+  let watchdogTimer = null;
+  let noResultTimer = null;
+  let lastStartTs   = 0;
+  let lastResultTs  = 0;
+
   function runRecognizerLoop(){
     if (!state.listening) return;
     const recog = makeRecognizer();
@@ -550,22 +605,28 @@
     state.recog = recog;
 
     recog.onresult = (evt)=>{
-      // 안드로이드: 대부분 final만 들어옴
+      // 결과가 오면 노리절트 타이머 재설정
+      lastResultTs = Date.now();
+      if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer = null; }
+      noResultTimer = setTimeout(() => {
+        if (!state.listening) return;
+        try { state.recog && state.recog.abort?.(); } catch(_) {}
+        runRecognizerLoop();
+      }, ANDROID_NORESULT_MS);
+
       const v = state.verses[state.currentVerseIdx] || "";
       if (!v) return;
       if (Date.now() < state.ignoreUntilTs) return;
 
-      // 상위 후보 1개만 사용(안드로이드 단일 결과 빈도 높음)
       const res = evt.results[evt.results.length-1]; if (!res) return;
       const tr = res[0]?.transcript || ""; if (!tr) return;
 
       const targetJ = normalizeToJamo(v, false);
       const spokenJ = normalizeToJamo(tr, true);
 
-      // 접두 커버리지 계산
       const matched = prefixCoverage(targetJ, spokenJ);
 
-      // 화면 채움: 앞서가지 않도록 완만히
+      // 화면 채움(앞서가지 않도록 점진)
       const paintLen = Math.min(targetJ.length, Math.max(state.paintedPrefix, Math.min(matched, state.paintedPrefix+3)));
       paintRead(paintLen);
       state.paintedPrefix = paintLen;
@@ -574,12 +635,14 @@
       const L = targetJ.length;
       const need = (L<=30?0.80:(L<=60?0.78:0.75));
 
-      if (ratio >= need) completeVerse(); // 최종판정: 관대
+      if (ratio >= need) completeVerse();
     };
 
-    // 안드로이드: onend가 자주 오므로 버튼 ON이면 즉시 재가동
     const restart = () => {
       if (!state.listening) return;
+      // 타이머 정리 후 재기동
+      if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
+      if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
       try { state.recog && (state.recog.onresult=null, state.recog.onend=null, state.recog.onerror=null, state.recog.abort?.()); } catch(_){}
       loopTimer = setTimeout(runRecognizerLoop, 80);
     };
@@ -588,7 +651,8 @@
     recog.onerror = (e)=>{
       console.warn("[SR] error:", e?.error, e);
       if (!state.listening) return;
-      // no-speech / network / audio-capture → 바로 재가동
+      if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
+      if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
       loopTimer = setTimeout(runRecognizerLoop, 150);
       if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
         alert("마이크 권한이 필요합니다. 주소창 오른쪽 마이크 아이콘을 확인하세요.");
@@ -596,9 +660,31 @@
     };
 
     try {
+      // 시작 시각/결과 시각 기록 및 감시 타이머 가동
+      lastStartTs  = Date.now();
+      lastResultTs = lastStartTs;
+
+      if (watchdogTimer) { clearTimeout(watchdogTimer); }
+      watchdogTimer = setTimeout(() => {
+        if (!state.listening) return;
+        if (lastResultTs === lastStartTs) { // 결과 전혀 없음
+          try { state.recog && state.recog.abort?.(); } catch(_) {}
+          runRecognizerLoop();
+        }
+      }, ANDROID_WATCHDOG_MS);
+
+      if (noResultTimer) { clearTimeout(noResultTimer); }
+      noResultTimer = setTimeout(() => {
+        if (!state.listening) return;
+        try { state.recog && state.recog.abort?.(); } catch(_) {}
+        runRecognizerLoop();
+      }, ANDROID_NORESULT_MS);
+
       recog.start();
     } catch(e) {
       console.warn("recog.start 실패:", e);
+      if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
+      if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
       loopTimer = setTimeout(runRecognizerLoop, 150);
     }
   }
@@ -628,27 +714,37 @@
       try{ state.recog.onresult=null; state.recog.onend=null; state.recog.onerror=null; state.recog.abort?.(); }catch(_){}
       try{ state.recog.stop?.(); }catch(_){}
     }
+    // 감시 타이머 정리
+    if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
+    if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
+
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
     stopMicLevel();
     releasePrimeMic();
   }
 
+  // 마이크 버튼으로만 제어
   els.btnToggleMic?.addEventListener("click", ()=>{ if(!state.listening) startListening(); else stopListening(); });
 
-  // ---------- 완료/자동이동 (마이크는 건드리지 않음) ----------
+  // ---------- 완료/자동이동 (마이크는 손대지 않음) ----------
   async function advanceToNextVerse() {
     if (state.currentVerseIdx < state.verses.length - 1) {
       state.currentVerseIdx++;
       state.myStats.last.verse = state.currentVerseIdx + 1;
       saveLastPosition();
       updateVerseText();
+      buildVerseGrid();   // 절 버튼 active/완료 반영
       return true;
     }
     return false;
   }
 
   async function completeVerse(){
+    // 절 완료 카운트
     await incVersesRead(1);
+
+    // 현재 절 버튼 완료 표시
+    markVerseAsDone(state.currentVerseIdx + 1);
 
     const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
     const b = getBookByKo(state.currentBookKo);
@@ -667,12 +763,11 @@
       state.paintedPrefix = 0;
       state.ignoreUntilTs = Date.now() + 500;
     } else {
-      // 자동이동이 아닐 때도, 같은 절 재시도시 과속 방지
       state.ignoreUntilTs = Date.now() + 300;
     }
   }
 
-  // ---------- 앞/뒤 절 버튼(마이크는 손대지 않음) ----------
+  // ---------- 앞/뒤 절 버튼 ----------
   els.btnNextVerse?.addEventListener("click", ()=>{
     if(!state.verses.length) return;
     if(state.currentVerseIdx<state.verses.length-1){
@@ -680,6 +775,7 @@
       state.myStats.last.verse = state.currentVerseIdx + 1;
       saveLastPosition();
       updateVerseText();
+      buildVerseGrid();
       state.paintedPrefix=0; state.ignoreUntilTs = Date.now() + 300;
     }
   });
@@ -690,6 +786,7 @@
       state.myStats.last.verse = state.currentVerseIdx + 1;
       saveLastPosition();
       updateVerseText();
+      buildVerseGrid();
       state.paintedPrefix=0; state.ignoreUntilTs = Date.now() + 300;
     }
   });
