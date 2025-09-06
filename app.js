@@ -75,7 +75,7 @@
     btnPrevVerse: document.getElementById("btnPrevVerse"),
     btnNextVerse: document.getElementById("btnNextVerse"),
     btnToggleMic: document.getElementById("btnToggleMic"),
-    btnMarkRead: document.getElementById("btnMarkRead"), // ✅ 추가
+    btnMarkRead: document.getElementById("btnMarkRead"), // ✔️ 존재해야 합니다
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
 
@@ -818,12 +818,22 @@
   });
 
   // ✅ "해당절읽음" 버튼 → 강제 완료 + 다음 절/다음 장 자동 오픈
+  // (마이크는 절대 건드리지 않음. 카운트/저장/버튼색/자동이동만 수행)
   els.btnMarkRead?.addEventListener("click", async () => {
     if (!state.verses.length) return;
 
     // 현재 절을 읽은 것으로 처리
     await incVersesRead(1);
     markVerseAsDone(state.currentVerseIdx + 1);
+
+    const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
+    const b = getBookByKo(state.currentBookKo);
+
+    if (!auto) {
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      return;
+    }
 
     // 다음 절로 이동 가능?
     if (state.currentVerseIdx < state.verses.length - 1) {
@@ -838,7 +848,6 @@
     }
 
     // 마지막 절이었다면 → 장 완료 후 다음 장 자동 오픈
-    const b = getBookByKo(state.currentBookKo);
     await markChapterDone(b.id, state.currentChapter);
     state.myStats.last.verse = 0;
     state.myStats.last.chapter = state.currentChapter;
