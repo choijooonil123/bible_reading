@@ -75,6 +75,7 @@
     btnPrevVerse: document.getElementById("btnPrevVerse"),
     btnNextVerse: document.getElementById("btnNextVerse"),
     btnToggleMic: document.getElementById("btnToggleMic"),
+    btnMarkRead: document.getElementById("btnMarkRead"), // ✅ 추가
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
 
@@ -779,7 +780,7 @@
           state.paintedPrefix = 0;
           state.ignoreUntilTs = Date.now() + 600; // 이동 직후 잠깐 무시
         } else {
-          alert("이 권의 마지막 장까지 완료했습니다. 다른 권을 선택해주세요.");
+          alert("이 권의 모든 장을 완료했습니다. 다른 권을 선택하세요.");
         }
         return;
       }
@@ -813,6 +814,44 @@
       updateVerseText();
       buildVerseGrid();
       state.paintedPrefix=0; state.ignoreUntilTs = Date.now() + 300;
+    }
+  });
+
+  // ✅ "해당절읽음" 버튼 → 강제 완료 + 다음 절/다음 장 자동 오픈
+  els.btnMarkRead?.addEventListener("click", async () => {
+    if (!state.verses.length) return;
+
+    // 현재 절을 읽은 것으로 처리
+    await incVersesRead(1);
+    markVerseAsDone(state.currentVerseIdx + 1);
+
+    // 다음 절로 이동 가능?
+    if (state.currentVerseIdx < state.verses.length - 1) {
+      state.currentVerseIdx++;
+      state.myStats.last.verse = state.currentVerseIdx + 1;
+      saveLastPosition();
+      updateVerseText();
+      buildVerseGrid();
+      state.paintedPrefix = 0;
+      state.ignoreUntilTs = Date.now() + 500;
+      return;
+    }
+
+    // 마지막 절이었다면 → 장 완료 후 다음 장 자동 오픈
+    const b = getBookByKo(state.currentBookKo);
+    await markChapterDone(b.id, state.currentChapter);
+    state.myStats.last.verse = 0;
+    state.myStats.last.chapter = state.currentChapter;
+    saveLastPosition();
+
+    if (state.currentChapter < b.ch) {
+      const nextChapter = state.currentChapter + 1;
+      await selectChapter(nextChapter);   // 다음 장 로드
+      buildChapterGrid();                 // 장 버튼 상태 갱신
+      state.paintedPrefix = 0;
+      state.ignoreUntilTs = Date.now() + 600;
+    } else {
+      alert("이 권의 모든 장을 완료했습니다. 다른 권을 선택하세요.");
     }
   });
 
