@@ -352,7 +352,7 @@
     for (let i = 1; i <= b.ch; i++) {
       const btn = document.createElement("button");
       const isDonePersist = state.progress[b.id]?.readChapters?.has(i);
-      btn.className = "chip";
+      btn.className = "chip small";
       btn.style.borderRadius = "9999px"; // 원형
       btn.textContent = i;
 
