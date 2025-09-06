@@ -24,8 +24,8 @@
 </head>
 <body>
 
-  <!-- A. 로그인 화면 (기본 숨김) -->
-  <section id="screen-login" class="screen">
+  <!-- A. 로그인 화면 -->
+  <section id="screen-login" class="screen show">
     <div class="hero">
       <div class="glow"></div>
       <div class="login-card">
@@ -61,8 +61,8 @@
     </div>
   </section>
 
-  <!-- B. 본화면 (로그인 후) - 🔥 기본 show -->
-  <section id="screen-app" class="screen show">
+  <!-- B. 본화면 (로그인 후) -->
+  <section id="screen-app" class="screen">
     <header class="appbar">
       <div class="brand"><span class="logo">📖</span><strong>말씀읽기</strong></div>
       <div class="actions">
@@ -116,9 +116,17 @@
           <small id="micDb" class="muted">-∞ dB</small>
         </div>
 
-        <!-- 버튼줄 -->
-        <div style="margin-top:10px; display:flex; gap:10px; align-items:center; justify-content:space-between;">
-          <div class="fab-row" style="width:120px;"></div>
+        <!-- 버튼들: 고정형(오른쪽) ⟨ / 🎙️ / ⟩  -->
+        <div class="fab-row" style="
+          position:fixed; right:12px; top:50%; transform:translateY(-50%);
+          display:flex; flex-direction:column; gap:12px; align-items:center; z-index:1000;">
+          <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
+          <button id="btnToggleMic" class="fab primary" aria-label="마이크 토글">🎙️</button>
+          <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
+        </div>
+
+        <!-- ‘해당절읽음’ 버튼: 오른쪽 정렬 & 초록색 -->
+        <div style="margin-top:10px; display:flex; justify-content:flex-end;">
           <button id="btnMarkRead" style="background:#43d17a; color:#fff; padding:6px 12px; border-radius:6px;">
             해당절읽음
           </button>
@@ -151,14 +159,6 @@
       </div>
     </div>
   </section>
-
-  <!-- 오른쪽 하단 고정 FAB -->
-  <div id="fabDock"
-       style="position:fixed; right:16px; bottom:24px; z-index:9999; display:flex; flex-direction:column; gap:12px;">
-    <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
-    <button id="btnToggleMic" class="fab primary" aria-label="마이크 토글">🎙️</button>
-    <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
-  </div>
 
 </body>
 </html>
