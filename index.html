@@ -69,7 +69,7 @@
         <button id="btnOpenMatrix" class="btn small">현황표</button>
       </div>
       <div id="signedIn" class="userbox hidden">
-        <img id="userPhoto" class="avatar" alt="avatar"/>
+        <img id="userPhoto" class="avatar hidden" alt="avatar"/>
         <span id="userName"></span>
         <button id="btnSignOut" class="btn small danger">로그아웃</button>
       </div>
@@ -110,30 +110,18 @@
           <div id="listenHint" class="muted sm">음성 인식으로 읽으면 글자가 채워집니다.</div>
         </div>
 
-        <!-- 🔹 마이크 모드 + 해당절읽음 버튼 (통계줄 위) -->
-        <div class="row between mt8">
-          <fieldset class="muted sm" style="border:0;padding:0;margin:0;display:flex;gap:10px;align-items:center">
-            <span>마이크 모드</span>
-            <label><input type="radio" name="recogMode" value="fast"> 빠름</label>
-            <label><input type="radio" name="recogMode" value="normal" checked> 보통</label>
-            <label><input type="radio" name="recogMode" value="lenient"> 느긋함</label>
-          </fieldset>
+        <!-- ✅ "해당절읽음" 버튼 + 감지 막대 -->
+        <div class="row mt12" style="gap:8px; align-items:center;">
           <button id="btnMarkRead" class="btn small">해당절읽음</button>
+          <div class="mic-level">
+            <div id="micBar" class="mic-bar"></div>
+          </div>
+          <div id="micDb" class="mic-db muted">-∞ dB</div>
         </div>
 
         <div class="row between stats">
           <strong id="myStats">—</strong>
-          <label class="muted">
-            <input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동
-          </label>
-        </div>
-
-        <!-- 🔹 마이크 감지 레벨 -->
-        <div class="mt8">
-          <div id="micBarWrap" style="background:#ccc;height:6px;border-radius:3px;overflow:hidden">
-            <div id="micBar" style="background:#4cd97b;height:100%;width:0%"></div>
-          </div>
-          <div id="micDb" class="muted sm">-∞ dB</div>
+          <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
         </div>
       </section>
 
