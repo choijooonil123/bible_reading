@@ -1,9 +1,10 @@
 /* 말씀읽기APP — Firebase 로그인/진도저장 + bible.json
-   + 안드로이드 최적화 음성매칭(워치독/노리절트)
+   + 안드로이드 최적화 음성매칭
    + 마이크는 버튼으로만 ON/OFF
    + 절 완료시 절 버튼 색, 장 모두 완료시 장 버튼 색
    + 절 자동이동/장 자동이동(성공 처리)
-   + 마이크 ON일 때 음성모드(라디오) 변경 금지
+   + "해당절읽음" 버튼 지원
+   + 마이크 ON일 때 음성모드 변경 금지(라디오 없을 시 자동 무시)
 */
 (() => {
   // ---------- PWA ----------
@@ -39,21 +40,16 @@
 
   // ---------- DOM ----------
   const els = {
-    // 로그인 폼
     email: document.getElementById("email"),
     password: document.getElementById("password"),
     displayName: document.getElementById("displayName"),
     nickname: document.getElementById("nickname"),
     btnLogin: document.getElementById("btnLogin"),
     btnSignup: document.getElementById("btnSignup"),
-
-    // 상단(앱)
     signedIn: document.getElementById("signedIn"),
     userName: document.getElementById("userName"),
     userPhoto: document.getElementById("userPhoto"),
     btnSignOut: document.getElementById("btnSignOut"),
-
-    // 선택/리더
     bookSelect: document.getElementById("bookSelect"),
     chapterGrid: document.getElementById("chapterGrid"),
     verseGrid: document.getElementById("verseGrid"),
@@ -61,25 +57,17 @@
     locLabel: document.getElementById("locLabel"),
     verseCount: document.getElementById("verseCount"),
     myStats: document.getElementById("myStats"),
-
-    // 리더보드
     leaderList: document.getElementById("leaderList"),
-
-    // 현황표
     matrixModal: document.getElementById("matrixModal"),
     matrixWrap: document.getElementById("matrixWrap"),
     btnCloseMatrix: document.getElementById("btnCloseMatrix"),
     btnOpenMatrix: document.getElementById("btnOpenMatrix"),
-
-    // FABs
     btnPrevVerse: document.getElementById("btnPrevVerse"),
     btnNextVerse: document.getElementById("btnNextVerse"),
     btnToggleMic: document.getElementById("btnToggleMic"),
-    btnMarkRead: document.getElementById("btnMarkRead"), // ✔️ 존재해야 합니다
+    btnMarkRead: document.getElementById("btnMarkRead"),
     listenHint: document.getElementById("listenHint"),
     autoAdvance: document.getElementById("autoAdvance"),
-
-    // (선택) 레벨미터
     micBar: document.getElementById("micBar"),
     micDb: document.getElementById("micDb"),
   };
@@ -93,9 +81,8 @@
     verses: [], currentVerseIdx: 0,
     listening:false, recog:null,
     progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
-    ignoreUntilTs: 0,              // 자동이동 직후 잠깐 무시
-    paintedPrefix: 0,              // 화면 채움 경계
-    verseDoneMap: {},              // { "창세기#1": Set<number> }  완료된 절(1-based)
+    ignoreUntilTs: 0, paintedPrefix: 0,
+    verseDoneMap: {},
   };
 
   // ---------- bible.json ----------
@@ -602,9 +589,8 @@
 
   let loopTimer=null;
 
-  // Android Chrome 139 안정화를 위한 감시 타이머
-  const ANDROID_WATCHDOG_MS  = 6500; // 시작 후 이 시간 안에 결과가 없으면 재기동
-  const ANDROID_NORESULT_MS  = 4200; // 진행 중 결과가 너무 오래 안 오면 재기동
+  const ANDROID_WATCHDOG_MS  = 6500;
+  const ANDROID_NORESULT_MS  = 4200;
   let watchdogTimer = null;
   let noResultTimer = null;
   let lastStartTs   = 0;
@@ -622,7 +608,6 @@
     state.recog = recog;
 
     recog.onresult = (evt)=>{
-      // 결과가 오면 노리절트 타이머 재설정
       lastResultTs = Date.now();
       if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer = null; }
       noResultTimer = setTimeout(() => {
@@ -657,7 +642,6 @@
 
     const restart = () => {
       if (!state.listening) return;
-      // 타이머 정리 후 재기동
       if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
       if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
       try { state.recog && (state.recog.onresult=null, state.recog.onend=null, state.recog.onerror=null, state.recog.abort?.()); } catch(_){}
@@ -677,14 +661,13 @@
     };
 
     try {
-      // 시작 시각/결과 시각 기록 및 감시 타이머 가동
       lastStartTs  = Date.now();
       lastResultTs = lastStartTs;
 
       if (watchdogTimer) { clearTimeout(watchdogTimer); }
       watchdogTimer = setTimeout(() => {
         if (!state.listening) return;
-        if (lastResultTs === lastStartTs) { // 결과 전혀 없음
+        if (lastResultTs === lastStartTs) {
           try { state.recog && state.recog.abort?.(); } catch(_) {}
           runRecognizerLoop();
         }
@@ -721,7 +704,7 @@
     els.btnToggleMic && (els.btnToggleMic.textContent="⏹️");
     startMicLevel();
 
-    refreshRecogModeLock(); // 라디오 잠금
+    refreshRecogModeLock(); // 라디오 잠금(없으면 무시)
     runRecognizerLoop();
   }
 
@@ -732,14 +715,13 @@
       try{ state.recog.onresult=null; state.recog.onend=null; state.recog.onerror=null; state.recog.abort?.(); }catch(_){}
       try{ state.recog.stop?.(); }catch(_){}
     }
-    // 감시 타이머 정리
     if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer=null; }
     if (noResultTimer) { clearTimeout(noResultTimer); noResultTimer=null; }
 
     if (resetBtn && els.btnToggleMic) els.btnToggleMic.textContent="🎙️";
     stopMicLevel();
     releasePrimeMic();
-    refreshRecogModeLock(); // 라디오 잠금 해제
+    refreshRecogModeLock(); // 라디오 잠금 해제(없으면 무시)
   }
 
   // 마이크 버튼으로만 제어
@@ -759,7 +741,6 @@
   }
 
   async function completeVerse(){
-    // 이 절은 성공으로 카운트
     await incVersesRead(1);
     markVerseAsDone(state.currentVerseIdx + 1);
 
@@ -767,25 +748,21 @@
     const b = getBookByKo(state.currentBookKo);
 
     if (auto){
-      // 다음 절로 이동
       const moved = await advanceToNextVerse();
       if (!moved){
-        // 장 완료: 장 버튼 색 이미 처리됨 → 다음 장 자동 이동
         await markChapterDone(b.id, state.currentChapter);
 
         if (state.currentChapter < b.ch) {
           const next = state.currentChapter + 1;
-          await selectChapter(next);            // 다음 장으로 이동
-          buildChapterGrid();                   // 장 버튼 상태 갱신
+          await selectChapter(next);
+          buildChapterGrid();
           state.paintedPrefix = 0;
-          state.ignoreUntilTs = Date.now() + 600; // 이동 직후 잠깐 무시
+          state.ignoreUntilTs = Date.now() + 600;
         } else {
           alert("이 권의 모든 장을 완료했습니다. 다른 권을 선택하세요.");
         }
         return;
       }
-
-      // 절 자동이동 안정화: 직후 파편 무시
       state.paintedPrefix = 0;
       state.ignoreUntilTs = Date.now() + 500;
     } else {
@@ -818,24 +795,12 @@
   });
 
   // ✅ "해당절읽음" 버튼 → 강제 완료 + 다음 절/다음 장 자동 오픈
-  // (마이크는 절대 건드리지 않음. 카운트/저장/버튼색/자동이동만 수행)
   els.btnMarkRead?.addEventListener("click", async () => {
     if (!state.verses.length) return;
 
-    // 현재 절을 읽은 것으로 처리
     await incVersesRead(1);
     markVerseAsDone(state.currentVerseIdx + 1);
 
-    const auto = els.autoAdvance ? !!els.autoAdvance.checked : true;
-    const b = getBookByKo(state.currentBookKo);
-
-    if (!auto) {
-      state.myStats.last.verse = state.currentVerseIdx + 1;
-      saveLastPosition();
-      return;
-    }
-
-    // 다음 절로 이동 가능?
     if (state.currentVerseIdx < state.verses.length - 1) {
       state.currentVerseIdx++;
       state.myStats.last.verse = state.currentVerseIdx + 1;
@@ -847,7 +812,7 @@
       return;
     }
 
-    // 마지막 절이었다면 → 장 완료 후 다음 장 자동 오픈
+    const b = getBookByKo(state.currentBookKo);
     await markChapterDone(b.id, state.currentChapter);
     state.myStats.last.verse = 0;
     state.myStats.last.chapter = state.currentChapter;
@@ -855,8 +820,8 @@
 
     if (state.currentChapter < b.ch) {
       const nextChapter = state.currentChapter + 1;
-      await selectChapter(nextChapter);   // 다음 장 로드
-      buildChapterGrid();                 // 장 버튼 상태 갱신
+      await selectChapter(nextChapter);
+      buildChapterGrid();
       state.paintedPrefix = 0;
       state.ignoreUntilTs = Date.now() + 600;
     } else {
@@ -864,10 +829,10 @@
     }
   });
 
-  // ---------- 음성모드 라디오: 마이크 ON일 때 변경 금지 ----------
+  // ---------- 음성모드 라디오: 마이크 ON일 때 변경 금지 (라디오 없으면 자동 무시) ----------
   function refreshRecogModeLock() {
     const radios = document.querySelectorAll('input[name=recogMode]');
-    if (!radios?.length) return;
+    if (!radios?.length) return; // 없으면 아무 것도 하지 않음
     radios.forEach(r => { r.disabled = state.listening; });
   }
   document.querySelectorAll('input[name=recogMode]')?.forEach(radio=>{
@@ -898,31 +863,92 @@
     });
   }
 
-  // ---------- Progress Matrix ----------
+  // (도움) 성경 축약표기: books.js에 abbr/short가 있으면 사용, 없으면 앞 2글자
+  function shortBookName(b){ 
+    return b.abbr || b.short || (b.ko ? b.ko.slice(0,2) : b.id || ""); 
+  }
+
+  // ---------- Progress Matrix (축약권명 + 3행 헤더) ----------
   function buildMatrix() {
     if (!els.matrixWrap) return;
     const maxCh = Math.max(...BOOKS.map(b => b.ch));
-    const table=document.createElement("table"); table.className="matrix";
-    const thead=document.createElement("thead"); const trh=document.createElement("tr");
-    const th0=document.createElement("th"); th0.className="book"; th0.textContent="권/장"; trh.appendChild(th0);
-    for(let c=1;c<=maxCh;c++){ const th=document.createElement("th"); th.textContent=String(c); trh.appendChild(th); }
-    thead.appendChild(trh); table.appendChild(thead);
-    const tbody=document.createElement("tbody");
-    for(const b of BOOKS){
-      const tr=document.createElement("tr");
-      const th=document.createElement("th"); th.className="book"; th.textContent=b.ko; tr.appendChild(th);
-      const read=state.progress[b.id]?.readChapters||new Set();
-      for(let c=1;c<=maxCh;c++){
-        const td=document.createElement("td");
-        if(c<=b.ch){ td.textContent=" "; td.style.background = read.has(c) ? "rgba(67,209,122,0.6)" : "rgba(120,120,140,0.25)"; td.title=`${b.ko} ${c}장`; }
-        else { td.style.background="transparent"; }
+
+    const table = document.createElement("table");
+    table.className = "matrix";
+
+    const thead = document.createElement("thead");
+
+    // 3행 헤더
+    const trTop    = document.createElement("tr");
+    const trMiddle = document.createElement("tr");
+    const trBottom = document.createElement("tr");
+
+    const thBook = document.createElement("th");
+    thBook.className = "book";
+    thBook.textContent = "권/장";
+    thBook.rowSpan = 3;
+    trTop.appendChild(thBook);
+
+    for (let c = 1; c <= maxCh; c++) {
+      const hundreds = Math.floor(c / 100);
+      const tens     = Math.floor((c % 100) / 10);
+      const ones     = c % 10;
+
+      const thH = document.createElement("th");
+      thH.textContent = hundreds || "";
+      const thT = document.createElement("th");
+      thT.textContent = tens || "";
+      const thO = document.createElement("th");
+      thO.textContent = ones;
+
+      [thH, thT, thO].forEach(th => {
+        th.style.textAlign = "center";
+        th.style.minWidth = "20px";
+        th.style.width = "20px";
+      });
+
+      trTop.appendChild(thH);
+      trMiddle.appendChild(thT);
+      trBottom.appendChild(thO);
+    }
+
+    thead.appendChild(trTop);
+    thead.appendChild(trMiddle);
+    thead.appendChild(trBottom);
+    table.appendChild(thead);
+
+    // 본문
+    const tbody = document.createElement("tbody");
+    for (const b of BOOKS) {
+      const tr = document.createElement("tr");
+
+      const th = document.createElement("th");
+      th.className = "book";
+      th.textContent = shortBookName(b); // 축약명
+      tr.appendChild(th);
+
+      const read = state.progress[b.id]?.readChapters || new Set();
+      for (let c = 1; c <= maxCh; c++) {
+        const td = document.createElement("td");
+        if (c <= b.ch) {
+          td.textContent = " ";
+          td.style.background = read.has(c)
+            ? "rgba(67,209,122,0.6)"
+            : "rgba(120,120,140,0.25)";
+          td.title = `${b.ko} ${c}장`;
+        } else {
+          td.style.background = "transparent";
+        }
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
     }
+
     table.appendChild(tbody);
-    els.matrixWrap.innerHTML=""; els.matrixWrap.appendChild(table);
+    els.matrixWrap.innerHTML = "";
+    els.matrixWrap.appendChild(table);
   }
+
   function openMatrix(){ buildMatrix(); els.matrixModal?.classList.add("show"); els.matrixModal?.classList.remove("hidden"); }
   function closeMatrix(){ els.matrixModal?.classList.remove("show"); els.matrixModal?.classList.add("hidden"); }
   document.getElementById("btnOpenMatrix")?.addEventListener("click", openMatrix);
