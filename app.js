@@ -939,7 +939,7 @@
       const ones     = c % 10;
 
       const thH = document.createElement("th");
-      thH.textContent = hundreds || ";
+      thH.textContent = hundreds || "";
       const thT = document.createElement("th");
       thT.textContent = tens || "";
       const thO = document.createElement("th");
