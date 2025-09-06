@@ -66,18 +66,17 @@ body {
 .reader-head { margin-bottom: 8px; }
 .loc { font-weight: bold; }
 .verse-container { padding: 12px; min-height: 100px; background: #1b2345; border-radius: 6px; }
-.verse-text { font-size: 18px; line-height: 1.6; word-break: keep-all; }
+#verseText { font-size: 18px; line-height: 1.6; word-break: keep-all; }
 
-/* ✅ 읽힌 글자 강조 (더 진하게) */
-/* ✅ 읽힌 글자 강조 (확실히 색칠 효과) */
-.verse-text span.read {
-  background: var(--ok);         /* 테마용 진한 초록색 */
-  color: #fff !important;        /* 글자 흰색으로 */
-  padding: 2px 4px;              /* 글자 안쪽에 여백 */
-  margin: 0 1px;                 /* 글자 간격 조금 */
-  border-radius: 4px;            /* 둥근 박스 */
+/* ✅ 읽힌 글자 강조 (색칠 효과 확실하게) */
+#verseText span.read {
+  background: var(--ok);         /* 진한 초록색 */
+  color: #fff !important;        /* 글자 흰색 */
+  padding: 2px 3px;              /* 살짝 안쪽 여백 */
+  margin: 0 1px;                 /* 글자 간격 */
+  border-radius: 4px;            /* 둥근 모양 */
   font-weight: bold;             /* 굵게 */
-  box-shadow: 0 0 3px rgba(0,0,0,0.5); /* 살짝 그림자 */
+  box-shadow: 0 0 4px rgba(0,0,0,0.5); /* 그림자 */
   transition: background 0.15s ease, color 0.15s ease;
 }
 
