@@ -109,9 +109,23 @@
           <div id="verseText" class="verse-text">성경/장/절을 선택하세요.</div>
           <div id="listenHint" class="muted sm">음성 인식으로 읽으면 글자가 채워집니다.</div>
         </div>
+
+        <!-- 🔹 마이크 모드 + 해당절읽음 버튼 (통계줄 위로 이동) -->
+        <div class="row between mt8">
+          <fieldset class="muted sm" style="border:0;padding:0;margin:0;display:flex;gap:10px;align-items:center">
+            <span>마이크 모드</span>
+            <label><input type="radio" name="recogMode" value="fast"> 빠름</label>
+            <label><input type="radio" name="recogMode" value="normal" checked> 보통</label>
+            <label><input type="radio" name="recogMode" value="lenient"> 느긋함</label>
+          </fieldset>
+          <button id="btnMarkRead" class="btn small">해당절읽음</button>
+        </div>
+
         <div class="row between stats">
           <strong id="myStats">—</strong>
-          <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
+          <label class="muted">
+            <input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동
+          </label>
         </div>
       </section>
 
@@ -128,8 +142,6 @@
       <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
       <button id="btnToggleMic" class="fab primary" aria-label="음성 인식">🎙️</button>
       <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
-      <!-- ✅ 추가: 해당 절을 강제로 읽음 처리 -->
-      <button id="btnMarkRead" class="fab" aria-label="해당 절 읽음">✔️</button>
     </div>
 
     <!-- 현황표 모달 -->
