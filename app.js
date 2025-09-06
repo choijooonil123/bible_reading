@@ -72,6 +72,9 @@
     micDb: document.getElementById("micDb"),
   };
 
+// 모달이 닫혀있을 때는 클릭 차단
+if (els.matrixModal) els.matrixModal.style.pointerEvents = "none";   
+
   // ---------- State ----------
   const BOOKS = window.BOOKS || [];
   const getBookByKo = (ko) => BOOKS.find(b => b.ko === ko);
@@ -374,6 +377,19 @@
     }
   }
 
+// 장 버튼 위임 클릭(동적 갱신/리스너 누락 대비)
+els.chapterGrid?.addEventListener("click", (e) => {
+  const btn = e.target?.closest("button.chip");
+  if (!btn || !els.chapterGrid.contains(btn)) return;
+  const n = parseInt(btn.textContent, 10);
+  if (Number.isFinite(n)) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectChapter(n);
+  }
+});
+
+   
   function keyForChapter(){ return `${state.currentBookKo}#${state.currentChapter}`; }
 
   // 절 버튼(원형) + 완료색 반영
@@ -1004,8 +1020,23 @@
     els.matrixWrap.appendChild(table);
   }
 
-  function openMatrix(){ buildMatrix(); els.matrixModal?.classList.add("show"); els.matrixModal?.classList.remove("hidden"); }
-  function closeMatrix(){ els.matrixModal?.classList.remove("show"); els.matrixModal?.classList.add("hidden"); }
+function openMatrix(){
+  buildMatrix();
+  if (els.matrixModal){
+    els.matrixModal.style.pointerEvents = "auto"; // 열릴 때만 클릭 허용
+  }
+  els.matrixModal?.classList.add("show");
+  els.matrixModal?.classList.remove("hidden");
+}
+
+function closeMatrix(){
+  els.matrixModal?.classList.remove("show");
+  els.matrixModal?.classList.add("hidden");
+  if (els.matrixModal){
+    els.matrixModal.style.pointerEvents = "none"; // 닫히면 클릭 차단
+  }
+} 
+  
   document.getElementById("btnOpenMatrix")?.addEventListener("click", openMatrix);
   els.btnCloseMatrix?.addEventListener("click", (e)=>{ e?.preventDefault?.(); e?.stopPropagation?.(); closeMatrix(); });
   els.matrixModal?.addEventListener("click", (e)=>{ const body=els.matrixModal.querySelector(".modal-body"); if (!body || !e.target) return; if (!body.contains(e.target)) closeMatrix(); });
