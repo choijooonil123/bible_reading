@@ -384,7 +384,7 @@
 
     for (let i = 1; i <= state.verses.length; i++) {
       const btn = document.createElement("button");
-      btn.className = "chip";
+      btn.className = "chip.small";
       btn.style.borderRadius = "9999px"; // 원형
       btn.textContent = i;
 
