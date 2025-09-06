@@ -4,6 +4,94 @@
    + 절 완료시 절 버튼 색, 장 모두 완료시 장 버튼 색
    + 절 자동이동/장 자동이동(성공 처리)
    + "해당절읽음" 버튼 지원
+   + 마이크 ON일 때 음성모드 변경 금지
+*/
+(() => {
+  // ---------- PWA ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js", { scope: "./" })
+        .then(reg => console.log("[SW] registered:", reg.scope))
+        .catch(err => console.warn("[SW] register failed:", err));
+    });
+  }
+
+  // ---------- Firebase ----------
+  let auth, db, user;
+  function initFirebase() {
+    if (!window.firebaseConfig || typeof firebase === "undefined") {
+      console.error("[Firebase] SDK/config 누락");
+      return;
+    }
+    firebase.initializeApp(window.firebaseConfig);
+    auth = firebase.auth();
+    db   = firebase.firestore();
+    console.log("[Firebase] 초기화 OK");
+  }
+  initFirebase();
+
+  // ---------- Screens ----------
+  const scrLogin = document.getElementById("screen-login");
+  const scrApp   = document.getElementById("screen-app");
+  function showScreen(name) {
+    if (name === "login") { scrLogin?.classList.add("show"); scrApp?.classList.remove("show"); }
+    else { scrApp?.classList.add("show"); scrLogin?.classList.remove("show"); }
+  }
+
+  // ---------- DOM ----------
+  const els = {
+    email: document.getElementById("email"),
+    password: document.getElementById("password"),
+    displayName: document.getElementById("displayName"),
+    nickname: document.getElementById("nickname"),
+    btnLogin: document.getElementById("btnLogin"),
+    btnSignup: document.getElementById("btnSignup"),
+    signedIn: document.getElementById("signedIn"),
+    userName: document.getElementById("userName"),
+    userPhoto: document.getElementById("userPhoto"),
+    btnSignOut: document.getElementById("btnSignOut"),
+    bookSelect: document.getElementById("bookSelect"),
+    chapterGrid: document.getElementById("chapterGrid"),
+    verseGrid: document.getElementById("verseGrid"),
+    verseText: document.getElementById("verseText"),
+    locLabel: document.getElementById("locLabel"),
+    verseCount: document.getElementById("verseCount"),
+    myStats: document.getElementById("myStats"),
+    leaderList: document.getElementById("leaderList"),
+    matrixModal: document.getElementById("matrixModal"),
+    matrixWrap: document.getElementById("matrixWrap"),
+    btnCloseMatrix: document.getElementById("btnCloseMatrix"),
+    btnOpenMatrix: document.getElementById("btnOpenMatrix"),
+    btnPrevVerse: document.getElementById("btnPrevVerse"),
+    btnNextVerse: document.getElementById("btnNextVerse"),
+    btnToggleMic: document.getElementById("btnToggleMic"),
+    btnMarkRead: document.getElementById("btnMarkRead"), // ✅ 해당절읽음
+    listenHint: document.getElementById("listenHint"),
+    autoAdvance: document.getElementById("autoAdvance"),
+    micBar: document.getElementById("micBar"),
+    micDb: document.getElementById("micDb"),
+  };
+
+  // ---------- State ----------
+  const BOOKS = window.BOOKS || [];
+  const getBookByKo = (ko) => BOOKS.find(b => b.ko === ko);
+  const IS_ANDROID = /Android/i.test(navigator.userAgent);
+  const state = {
+    bible: null, currentBookKo: null, currentChapter: null,
+    verses: [], currentVerseIdx: 0,
+    listening:false, recog:null,
+    progress:{}, myStats:{versesRead:0,chaptersRead:0,last:{bookKo:null,chapter:null,verse:0}},
+    ignoreUntilTs: 0, paintedPrefix: 0,
+    verseDoneMap: {},
+  };
+
+
+/* 말씀읽기APP — Firebase 로그인/진도저장 + bible.json
+   + 안드로이드 최적화 음성매칭
+   + 마이크는 버튼으로만 ON/OFF
+   + 절 완료시 절 버튼 색, 장 모두 완료시 장 버튼 색
+   + 절 자동이동/장 자동이동(성공 처리)
+   + "해당절읽음" 버튼 지원
    + 마이크 ON일 때 음성모드 변경 금지(라디오 없을 시 자동 무시)
 */
 (() => {
