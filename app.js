@@ -351,6 +351,7 @@
 
     for (let i = 1; i <= b.ch; i++) {
       const btn = document.createElement("button");
+      btn.type = "button"; // ✅ 추가: 폼 제출 방지로 클릭 씹힘 방지
       const isDonePersist = state.progress[b.id]?.readChapters?.has(i);
       btn.className = "chip";
       btn.style.borderRadius = "9999px"; // 원형
@@ -384,6 +385,7 @@
 
     for (let i = 1; i <= state.verses.length; i++) {
       const btn = document.createElement("button");
+      btn.type = "button"; // ✅ 추가: 폼 제출 방지
       btn.className = "chip";
       btn.style.borderRadius = "9999px"; // 원형
       btn.textContent = i;
