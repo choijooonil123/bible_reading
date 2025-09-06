@@ -116,6 +116,14 @@
           <small id="micDb" class="muted">-∞ dB</small>
         </div>
 
+        <!-- 👇 음성매칭 엄격도 표시/선택 (UI만 추가) -->
+        <div id="strictControls" class="muted sm" style="margin:6px 0 0 0;">
+          <span>매칭:</span>
+          <label style="margin-left:6px;"><input type="radio" name="matchStrict" value="엄격"> 엄격</label>
+          <label style="margin-left:6px;"><input type="radio" name="matchStrict" value="보통" checked> 보통</label>
+          <label style="margin-left:6px;"><input type="radio" name="matchStrict" value="관대"> 관대</label>
+        </div>
+
         <!-- 버튼들: 고정형(오른쪽) ⟨ / 🎙️ / ⟩  -->
         <div class="fab-row" style="
           position:fixed; right:12px; top:50%; transform:translateY(-50%);
