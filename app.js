@@ -93,6 +93,10 @@
     localStorage.setItem("matchStrictness", level);
     const hint = document.getElementById("listenHint");
     if (hint) hint.textContent = `음성매칭 엄격도: ${level}`;
+    // 라디오 UI 동기화
+    document.querySelectorAll('input[name=matchStrict]').forEach(r=>{
+      r.checked = (r.value === level);
+    });
   };
   function needThresholdByLen(len){
     const base = (len<=30?0.80:(len<=60?0.78:0.75));
@@ -103,6 +107,19 @@
     if (MATCH_STRICTNESS==="엄격") return { subNear:0.38, subFar:1.00, del:0.60, ins:0.60 };
     if (MATCH_STRICTNESS==="관대") return { subNear:0.28, subFar:0.88, del:0.52, ins:0.52 };
     return { subNear:0.35, subFar:1.00, del:0.55, ins:0.55 };
+  }
+  // 라디오 이벤트 연결 + 초기표시
+  function initStrictnessUI(){
+    const radios = document.querySelectorAll('input[name=matchStrict]');
+    if (!radios.length) return;
+    radios.forEach(r=>{
+      r.checked = (r.value === MATCH_STRICTNESS);
+      r.addEventListener('change', ()=>{
+        if (r.checked) window.setMatchStrictness(r.value);
+      });
+    });
+    const hint = document.getElementById("listenHint");
+    if (hint) hint.textContent = `음성매칭 엄격도: ${MATCH_STRICTNESS}`;
   }
 
   // ---------- bible.json ----------
@@ -117,6 +134,7 @@
     }
   }
   loadBible();
+  initStrictnessUI(); // 👈 엄격도 UI 초기화
 
   // ---------- Auth UX ----------
   function mapAuthError(e) {
@@ -921,7 +939,7 @@
       const ones     = c % 10;
 
       const thH = document.createElement("th");
-      thH.textContent = hundreds || "";
+      thH.textContent = hundreds || ";
       const thT = document.createElement("th");
       thT.textContent = tens || "";
       const thO = document.createElement("th");
