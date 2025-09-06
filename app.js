@@ -72,9 +72,11 @@
     micDb: document.getElementById("micDb"),
   };
 
+/*   
 // 모달이 닫혀있을 때는 클릭 차단
 if (els.matrixModal) els.matrixModal.style.pointerEvents = "none";   
-
+*/
+   
   // ---------- State ----------
   const BOOKS = window.BOOKS || [];
   const getBookByKo = (ko) => BOOKS.find(b => b.ko === ko);
