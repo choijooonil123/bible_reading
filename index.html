@@ -24,8 +24,8 @@
 </head>
 <body>
 
-  <!-- A. 로그인 화면 -->
-  <section id="screen-login" class="screen show">
+  <!-- A. 로그인 화면 (기본 숨김) -->
+  <section id="screen-login" class="screen">
     <div class="hero">
       <div class="glow"></div>
       <div class="login-card">
@@ -61,8 +61,8 @@
     </div>
   </section>
 
-  <!-- B. 본화면 (로그인 후) -->
-  <section id="screen-app" class="screen">
+  <!-- B. 본화면 (로그인 후) - 🔥 기본 show -->
+  <section id="screen-app" class="screen show">
     <header class="appbar">
       <div class="brand"><span class="logo">📖</span><strong>말씀읽기</strong></div>
       <div class="actions">
@@ -116,9 +116,8 @@
           <small id="micDb" class="muted">-∞ dB</small>
         </div>
 
-        <!-- 버튼줄: (왼쪽 자리만 유지) + 해당절읽음(오른쪽) -->
+        <!-- 버튼줄 -->
         <div style="margin-top:10px; display:flex; gap:10px; align-items:center; justify-content:space-between;">
-          <!-- 왼쪽 비워서 레이아웃 유지 (FAB는 고정 영역으로 이동) -->
           <div class="fab-row" style="width:120px;"></div>
           <button id="btnMarkRead" style="background:#43d17a; color:#fff; padding:6px 12px; border-radius:6px;">
             해당절읽음
@@ -153,7 +152,7 @@
     </div>
   </section>
 
-  <!-- 🔒 오른쪽 하단 고정: 이전/마이크/다음 (원래 형태로 복귀) -->
+  <!-- 오른쪽 하단 고정 FAB -->
   <div id="fabDock"
        style="position:fixed; right:16px; bottom:24px; z-index:9999; display:flex; flex-direction:column; gap:12px;">
     <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
