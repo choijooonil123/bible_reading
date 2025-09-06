@@ -69,7 +69,7 @@
         <button id="btnOpenMatrix" class="btn small">현황표</button>
       </div>
       <div id="signedIn" class="userbox hidden">
-        <img id="userPhoto" class="avatar hidden" alt="avatar"/>
+        <img id="userPhoto" class="avatar" alt="avatar"/>
         <span id="userName"></span>
         <button id="btnSignOut" class="btn small danger">로그아웃</button>
       </div>
@@ -110,15 +110,25 @@
           <div id="listenHint" class="muted sm">음성 인식으로 읽으면 글자가 채워집니다.</div>
         </div>
 
-        <!-- ✅ "해당절읽음" 버튼 + 감지 막대 -->
-        <div class="row mt12" style="gap:8px; align-items:center;">
-          <button id="btnMarkRead" class="btn small">해당절읽음</button>
-          <div class="mic-level">
-            <div id="micBar" class="mic-bar"></div>
-          </div>
-          <div id="micDb" class="mic-db muted">-∞ dB</div>
+        <!-- 마이크 감지 레벨 -->
+        <div style="margin:8px 0;">
+          <div id="micBar" style="height:6px; background:#43d17a; width:0%; transition:width 0.1s"></div>
+          <small id="micDb" class="muted">-∞ dB</small>
         </div>
 
+        <!-- 버튼들 -->
+        <div style="margin-top:10px; display:flex; gap:10px; align-items:center; justify-content:space-between;">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button id="btnPrevVerse">⟨ 이전절</button>
+            <button id="btnToggleMic">🎙️</button>
+            <button id="btnNextVerse">다음절 ⟩</button>
+          </div>
+          <button id="btnMarkRead" style="background:#43d17a; color:#fff; padding:6px 12px; border-radius:6px;">
+            해당절읽음
+          </button>
+        </div>
+
+        <!-- 통계줄 -->
         <div class="row between stats">
           <strong id="myStats">—</strong>
           <label class="muted"><input type="checkbox" id="autoAdvance" checked/> 절 완료 시 자동 이동</label>
@@ -132,13 +142,6 @@
         <p class="muted sm">※ 닉네임이 없는 사용자는 이메일 앞부분으로 표시됩니다.</p>
       </section>
     </main>
-
-    <!-- 조작 FAB -->
-    <div class="fab-col">
-      <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
-      <button id="btnToggleMic" class="fab primary" aria-label="음성 인식">🎙️</button>
-      <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
-    </div>
 
     <!-- 현황표 모달 -->
     <div id="matrixModal" class="modal hidden">
