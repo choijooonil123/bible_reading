@@ -116,12 +116,12 @@
           <small id="micDb" class="muted">-∞ dB</small>
         </div>
 
-        <!-- 버튼들 -->
+        <!-- 버튼들: ⟨ / 🎙️ / ⟩ (이전 동그란 FAB로 복귀) -->
         <div style="margin-top:10px; display:flex; gap:10px; align-items:center; justify-content:space-between;">
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button id="btnPrevVerse">⟨ 이전절</button>
-            <button id="btnToggleMic">🎙️</button>
-            <button id="btnNextVerse">다음절 ⟩</button>
+          <div class="fab-row" style="display:flex; gap:12px; align-items:center;">
+            <button id="btnPrevVerse" class="fab" aria-label="이전 절">⟨</button>
+            <button id="btnToggleMic" class="fab primary" aria-label="마이크 토글">🎙️</button>
+            <button id="btnNextVerse" class="fab" aria-label="다음 절">⟩</button>
           </div>
           <button id="btnMarkRead" style="background:#43d17a; color:#fff; padding:6px 12px; border-radius:6px;">
             해당절읽음
