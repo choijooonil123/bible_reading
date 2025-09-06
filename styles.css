@@ -69,11 +69,16 @@ body {
 .verse-text { font-size: 18px; line-height: 1.6; word-break: keep-all; }
 
 /* ✅ 읽힌 글자 강조 (더 진하게) */
+/* ✅ 읽힌 글자 강조 (확실히 색칠 효과) */
 .verse-text span.read {
-  background: rgba(0, 150, 0, 0.85); /* 진한 초록 배경 */
-  color: #fff;                       /* 글자 흰색 */
-  border-radius: 3px;
-  transition: background 0.2s ease, color 0.2s ease;
+  background: var(--ok);         /* 테마용 진한 초록색 */
+  color: #fff !important;        /* 글자 흰색으로 */
+  padding: 2px 4px;              /* 글자 안쪽에 여백 */
+  margin: 0 1px;                 /* 글자 간격 조금 */
+  border-radius: 4px;            /* 둥근 박스 */
+  font-weight: bold;             /* 굵게 */
+  box-shadow: 0 0 3px rgba(0,0,0,0.5); /* 살짝 그림자 */
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 /* FAB 버튼 */
