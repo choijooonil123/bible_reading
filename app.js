@@ -72,11 +72,9 @@
     micDb: document.getElementById("micDb"),
   };
 
-/*   
 // 모달이 닫혀있을 때는 클릭 차단
 if (els.matrixModal) els.matrixModal.style.pointerEvents = "none";   
-*/
-   
+
   // ---------- State ----------
   const BOOKS = window.BOOKS || [];
   const getBookByKo = (ko) => BOOKS.find(b => b.ko === ko);
@@ -373,7 +371,10 @@ if (els.matrixModal) els.matrixModal.style.pointerEvents = "none";
       }
       if (isDonePersist) btn.classList.add("done");
 
-      btn.addEventListener("click", () => selectChapter(i));
+      btn.addEventListener("click", (e) => { // ✅ e.preventDefault 추가
+        e.preventDefault();
+        selectChapter(i);
+      });
       if (state.currentChapter === i) btn.classList.add("active");
       els.chapterGrid.appendChild(btn);
     }
@@ -1084,6 +1085,48 @@ function closeMatrix(){
     audioCtx = null; analyser = null; micSrc = null; micStream = null;
     if (els.micBar) els.micBar.style.width = "0%";
     if (els.micDb) els.micDb.textContent = "-∞ dB";
+  }
+
+  // ✅ 추가: selectChapter 함수 (다른 부분은 변경 없음)
+  async function selectChapter(chapter) {
+    state.currentChapter = chapter; 
+    state.currentVerseIdx = 0;
+
+    const b = getBookByKo(state.currentBookKo);
+    els.locLabel && (els.locLabel.textContent = `${b?.ko || ""} ${chapter}장`);
+    els.verseText && (els.verseText.textContent = "로딩 중…");
+
+    if (!state.bible) {
+      await loadBible();
+      if (!state.bible) {
+        els.verseText && (els.verseText.textContent = "bible.json 로딩 실패");
+        return;
+      }
+    }
+
+    // bible.json: 책명(ko) → 장(String) → {절:String}
+    const chObj = state.bible?.[state.currentBookKo]?.[String(chapter)];
+    if (!chObj) {
+      els.verseText && (els.verseText.textContent = `${b?.ko || ""} ${chapter}장 본문 없음`);
+      els.verseCount && (els.verseCount.textContent = "");
+      els.verseGrid && (els.verseGrid.innerHTML = "");
+      return;
+    }
+
+    const entries = Object.entries(chObj)
+      .map(([k,v])=>[parseInt(k,10), String(v)])
+      .sort((a,c)=>a[0]-c[0]);
+
+    state.verses = entries.map(e=>e[1]);
+
+    els.verseCount && (els.verseCount.textContent = `(${state.verses.length}절)`);
+    buildVerseGrid();
+    updateVerseText();
+
+    state.myStats.last = { bookKo: state.currentBookKo, chapter, verse: 1 };
+    saveLastPosition();
+
+    buildChapterGrid(); // 현재 장 active/done 반영 갱신
   }
 
 })();
