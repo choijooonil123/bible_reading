@@ -352,7 +352,7 @@
     for (let i = 1; i <= b.ch; i++) {
       const btn = document.createElement("button");
       const isDonePersist = state.progress[b.id]?.readChapters?.has(i);
-      btn.className = "chip.small";
+      btn.className = "chip";
       btn.style.borderRadius = "9999px"; // 원형
       btn.textContent = i;
 
@@ -384,7 +384,7 @@
 
     for (let i = 1; i <= state.verses.length; i++) {
       const btn = document.createElement("button");
-      btn.className = "chip.small";
+      btn.className = "chip";
       btn.style.borderRadius = "9999px"; // 원형
       btn.textContent = i;
 
@@ -402,48 +402,56 @@
     }
   }
 
-  async function selectChapter(chapter) {
-    state.currentChapter = chapter; state.currentVerseIdx = 0;
-    const b = getBookByKo(state.currentBookKo);
-    els.locLabel && (els.locLabel.textContent = `${b?.ko || ""} ${chapter}장`);
-    els.verseText && (els.verseText.textContent = "로딩 중…");
-
-    if (!state.bible) { await loadBible(); if (!state.bible) { els.verseText && (els.verseText.textContent = "bible.json 로딩 실패"); return; } }
-    const chObj = state.bible?.[state.currentBookKo]?.[String(chapter)];
-    if (!chObj) {
-      els.verseText && (els.verseText.textContent = `${b.ko} ${chapter}장 본문 없음`);
-      els.verseCount && (els.verseCount.textContent = ""); els.verseGrid && (els.verseGrid.innerHTML = ""); return;
-    }
-    const entries = Object.entries(chObj).map(([k,v])=>[parseInt(k,10), String(v)]).sort((a,b)=>a[0]-b[0]);
-    state.verses = entries.map(e=>e[1]);
-
-    els.verseCount && (els.verseCount.textContent = `(${state.verses.length}절)`);
-    buildVerseGrid();
-    updateVerseText();
-    state.myStats.last = { bookKo: b.ko, chapter, verse: 1 }; saveLastPosition();
-    buildChapterGrid(); // 현재 장 active/done 반영 갱신
-  }
-
   // ---------- 표시/매칭 ----------
+  // (2) updateVerseText 교체본
   function updateVerseText() {
     const v = state.verses[state.currentVerseIdx] || "";
     state.paintedPrefix = 0;
+
+    // 현재 절의 자모 문자열과 누적 자모 길이 맵 캐시
+    state.targetJ = normalizeToJamo(v, false);
+    state.charCumJamo = buildCharToJamoCumMap(v);
+
     els.locLabel && (els.locLabel.textContent =
       `${state.currentBookKo} ${state.currentChapter}장 ${state.currentVerseIdx + 1}절`);
     if (els.verseText) {
       els.verseText.innerHTML = "";
-      for (let i = 0; i < v.length; i++) { const s=document.createElement("span"); s.textContent=v[i]; els.verseText.appendChild(s); }
+      for (let i = 0; i < v.length; i++) {
+        const s = document.createElement("span");
+        s.textContent = v[i];
+        els.verseText.appendChild(s);
+      }
     }
     els.verseCount && (els.verseCount.textContent =
       `(${state.verses.length}절 중 ${state.currentVerseIdx + 1}절)`);
-    if (els.verseGrid) { [...els.verseGrid.children].forEach((btn, idx) =>
-      btn.classList.toggle("active", idx===state.currentVerseIdx)); }
+    if (els.verseGrid) {
+      [...els.verseGrid.children].forEach((btn, idx) =>
+        btn.classList.toggle("active", idx===state.currentVerseIdx));
+    }
   }
-  function paintRead(prefixLen){
+
+  // (1) 자모 누적 길이 맵 헬퍼 추가
+  function buildCharToJamoCumMap(str){
+    const cum = [0];
+    for (let i = 0; i < str.length; i++) {
+      const j = decomposeJamo(str[i]).replace(/\s+/g,"");
+      cum.push(cum[cum.length-1] + j.length);
+    }
+    return cum;
+  }
+
+  // (3) paintRead 교체본
+  function paintRead(prefixJamoLen){
     if (!els.verseText) return;
     const spans = els.verseText.childNodes;
+    const cum = state.charCumJamo || [];
+
+    let k = 0;
+    while (k < cum.length && cum[k] <= prefixJamoLen) k++;
+    const charCount = Math.max(0, k - 1);
+
     for (let i=0;i<spans.length;i++){
-      spans[i].classList?.toggle("read", i<prefixLen);
+      spans[i].classList?.toggle("read", i < charCount);
     }
   }
 
@@ -668,7 +676,8 @@
       const res = evt.results[evt.results.length-1]; if (!res) return;
       const tr = res[0]?.transcript || ""; if (!tr) return;
 
-      const targetJ = normalizeToJamo(v, false);
+      // (4) targetJ 캐시 사용
+      const targetJ = state.targetJ || normalizeToJamo(v, false);
       const spokenJ = normalizeToJamo(tr, true);
 
       const matched = prefixCoverage(targetJ, spokenJ);
@@ -939,7 +948,7 @@
       const ones     = c % 10;
 
       const thH = document.createElement("th");
-      thH.textContent = hundreds || "";
+      thH.textContent = hundreds || ";
       const thT = document.createElement("th");
       thT.textContent = tens || "";
       const thO = document.createElement("th");
